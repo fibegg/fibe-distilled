@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"time"
 
@@ -45,11 +46,12 @@ func (s *Server) hardRestartPlayground(w http.ResponseWriter, r *http.Request, p
 func (s *Server) runPlaygroundOperation(w http.ResponseWriter, r *http.Request, pg domain.Playground, action string) (domain.Playground, bool) {
 	req := playgroundTestRequest(r, pg, map[string]any{"action_type": action})
 	s.playground.Operations(w, req)
+	ok := waitPlaygroundOperationAdapterAsync(req.Context(), s, w)
 	current, err := s.store.GetPlayground(req.Context(), strconv.FormatInt(pg.ID, 10))
 	if err != nil {
 		return pg, false
 	}
-	return current, testResponseOK(w)
+	return current, ok
 }
 
 func playgroundTestRequest(r *http.Request, pg domain.Playground, body map[string]any) *http.Request {
@@ -71,6 +73,36 @@ func testResponseOK(w http.ResponseWriter) bool {
 		return code >= 200 && code < 300
 	}
 	return true
+}
+
+func waitPlaygroundOperationAdapterAsync(ctx context.Context, s *Server, w http.ResponseWriter) bool {
+	rec, ok := w.(*httptest.ResponseRecorder)
+	if !ok || rec.Code != http.StatusAccepted {
+		return testResponseOK(w)
+	}
+	var queued map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &queued); err != nil {
+		return false
+	}
+	requestID, _ := queued["request_id"].(string)
+	if requestID == "" {
+		return false
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		op, err := s.store.GetAsync(ctx, requestID)
+		if err != nil {
+			return false
+		}
+		switch op.Status {
+		case domain.AsyncSuccess:
+			return true
+		case domain.AsyncError:
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 type ioNopCloser struct {

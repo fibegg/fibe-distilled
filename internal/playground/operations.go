@@ -1,12 +1,15 @@
 package playground
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/fibegg/fibe-distilled/internal/api/response"
 	"github.com/fibegg/fibe-distilled/internal/domain"
@@ -33,6 +36,13 @@ func (h Handler) playgroundsOperations(w http.ResponseWriter, r *http.Request) {
 	}
 	if validation := validatePlaygroundOperationState(pg, action, body.force()); validation != nil {
 		response.Error(w, r, validation.status, validation.code, validation.message, validation.details)
+		return
+	}
+	if !h.validatePlaygroundOperationDependencies(w, r, pg, action) {
+		return
+	}
+	if playgroundOperationShouldEnqueue(action, pg) {
+		h.enqueuePlaygroundOperation(w, r, pg, action)
 		return
 	}
 	updated, ok := h.applyPlaygroundOperation(w, r, pg, action)
@@ -70,6 +80,70 @@ func (h Handler) applyPlaygroundOperation(w http.ResponseWriter, r *http.Request
 		response.BadRequest(w, r, "unsupported playground action")
 		return pg, false
 	}
+}
+
+// validatePlaygroundOperationDependencies rejects obvious dependency failures before enqueue.
+func (h Handler) validatePlaygroundOperationDependencies(w http.ResponseWriter, r *http.Request, pg domain.Playground, action string) bool {
+	if playgroundOperationCanUseRuntimeOnly(action, pg) {
+		return true
+	}
+	if playgroundOperationNeedsPlayspec(action) && pg.PlayspecID == nil {
+		response.Error(w, r, http.StatusUnprocessableEntity, "PLAYGROUND_ACTION_FAILED", "playground has no playspec to deploy", map[string]any{"dependency": "playspec"})
+		return false
+	}
+	return true
+}
+
+// playgroundOperationNeedsPlayspec reports whether an action may redeploy from Playspec.
+func playgroundOperationNeedsPlayspec(action string) bool {
+	switch action {
+	case "rollout", "retry_compose", "start", "hard_restart":
+		return true
+	default:
+		return false
+	}
+}
+
+// playgroundOperationCanUseRuntimeOnly reports whether an action can skip Playspec dependency.
+func playgroundOperationCanUseRuntimeOnly(action string, pg domain.Playground) bool {
+	switch action {
+	case "start", "hard_restart":
+		return playgroundHasRuntimeCompose(pg)
+	default:
+		return false
+	}
+}
+
+// playgroundOperationShouldEnqueue reports whether an action may run a full deploy.
+func playgroundOperationShouldEnqueue(action string, pg domain.Playground) bool {
+	switch action {
+	case "rollout", "retry_compose":
+		return true
+	case "start":
+		return !playgroundHasRuntimeCompose(pg)
+	case "hard_restart":
+		return pg.PlayspecID != nil
+	default:
+		return false
+	}
+}
+
+// enqueuePlaygroundOperation runs the real lifecycle work under the async supervisor.
+func (h Handler) enqueuePlaygroundOperation(w http.ResponseWriter, r *http.Request, pg domain.Playground, action string) {
+	op, err := h.services.Enqueue(r.Context(), func(ctx context.Context) (map[string]any, *domain.APIError) {
+		rec := newOperationCaptureResponse()
+		req := r.Clone(ctx)
+		updated, ok := h.applyPlaygroundOperation(rec, req, pg, action)
+		if !ok {
+			return nil, operationCaptureAPIError(rec, action)
+		}
+		return playgroundOperationAsyncPayload(updated), nil
+	})
+	if err != nil {
+		response.ServerError(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusAccepted, map[string]any{"request_id": op.ID, "status": "queued", "status_url": op.StatusURL})
 }
 
 // startPlaygroundOperation starts existing Compose or redeploys from Playspec.
@@ -218,6 +292,18 @@ func (h Handler) savePlaygroundOperationStatus(w http.ResponseWriter, r *http.Re
 	return saved, true
 }
 
+// enqueuePlaygroundOperationResult returns an async-shaped result for fast sync actions.
+func (h Handler) enqueuePlaygroundOperationResult(w http.ResponseWriter, r *http.Request, pg domain.Playground) {
+	op, err := h.services.Enqueue(r.Context(), func(context.Context) (map[string]any, *domain.APIError) {
+		return playgroundOperationAsyncPayload(pg), nil
+	})
+	if err != nil {
+		response.ServerError(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusAccepted, map[string]any{"request_id": op.ID, "status": "queued", "status_url": op.StatusURL})
+}
+
 // currentPlaygroundOperationClaim reloads and guards against superseded actions.
 func (h Handler) currentPlaygroundOperationClaim(w http.ResponseWriter, r *http.Request, pg domain.Playground) (domain.Playground, bool) {
 	current, err := h.repo.GetPlayground(r.Context(), idString(pg.ID))
@@ -239,22 +325,6 @@ func (h Handler) currentPlaygroundOperationClaim(w http.ResponseWriter, r *http.
 // playgroundHasRuntimeCompose reports whether local Compose actions are possible.
 func playgroundHasRuntimeCompose(pg domain.Playground) bool {
 	return pg.MarqueeID != nil && pg.ComposeProject != nil
-}
-
-// enqueuePlaygroundOperationResult returns an async-shaped action result.
-func (h Handler) enqueuePlaygroundOperationResult(w http.ResponseWriter, r *http.Request, pg domain.Playground) {
-	op, err := h.services.Enqueue(r.Context(), func(context.Context) (map[string]any, *domain.APIError) {
-		return map[string]any{
-			"id":                pg.ID,
-			"name":              pg.Name,
-			"playground_status": pg.Status,
-		}, nil
-	})
-	if err != nil {
-		response.ServerError(w, r, err)
-		return
-	}
-	response.JSON(w, r, http.StatusAccepted, map[string]any{"request_id": op.ID, "status": "queued", "status_url": op.StatusURL})
 }
 
 // validatedPlaygroundOperationAction validates and resolves the SDK action_type.
@@ -430,4 +500,76 @@ func writePlaygroundOperationDependencyErr(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	response.ServerError(w, r, err)
+}
+
+// playgroundOperationAsyncPayload is the terminal success payload decoded by SDK action calls.
+func playgroundOperationAsyncPayload(pg domain.Playground) map[string]any {
+	return map[string]any{
+		"id":                pg.ID,
+		"name":              pg.Name,
+		"playground_status": pg.Status,
+		"completed_at":      time.Now().UTC().Format(time.RFC3339Nano),
+	}
+}
+
+// operationCaptureResponse captures operation errors written by existing sync helpers.
+type operationCaptureResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+// newOperationCaptureResponse constructs an in-memory response writer.
+func newOperationCaptureResponse() *operationCaptureResponse {
+	return &operationCaptureResponse{header: make(http.Header)}
+}
+
+// Header returns captured response headers.
+func (w *operationCaptureResponse) Header() http.Header {
+	return w.header
+}
+
+// Write captures a response body.
+func (w *operationCaptureResponse) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(data)
+}
+
+// WriteHeader captures a response status.
+func (w *operationCaptureResponse) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+// operationCaptureAPIError converts a captured HTTP error into an async API error.
+func operationCaptureAPIError(rec *operationCaptureResponse, action string) *domain.APIError {
+	apiErr := &domain.APIError{
+		Code:    "PLAYGROUND_ACTION_FAILED",
+		Message: fmt.Sprintf("playground %s action failed", strings.ReplaceAll(action, "_", " ")),
+	}
+	if rec == nil || rec.body.Len() == 0 {
+		return apiErr
+	}
+	var decoded struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.body.Bytes(), &decoded); err != nil {
+		apiErr.Details = map[string]any{"response_body": rec.body.String()}
+		return apiErr
+	}
+	if decoded.Error.Code != "" {
+		apiErr.Code = decoded.Error.Code
+	}
+	if decoded.Error.Message != "" {
+		apiErr.Message = decoded.Error.Message
+	}
+	apiErr.Details = decoded.Error.Details
+	return apiErr
 }
