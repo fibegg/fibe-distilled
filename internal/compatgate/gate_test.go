@@ -320,9 +320,13 @@ func TestCheckRejectsExtraQueryFields(t *testing.T) {
 	for _, q := range []string{
 		"/api/playgrounds?status=running&per_page=50&page=1",
 		"/api/playgrounds?sort=created_at_desc&created_after=x&created_before=y",
+		"/api/playgrounds?job_mode=false",
+		"/api/playgrounds?job_mode=0",
 		"/api/props?q=foo&provider=github&sort=name_asc",
 		"/api/marquees?name=host&sort=name_asc",
 		"/api/playspecs?locked=false",
+		"/api/playspecs?job_mode=false",
+		"/api/playspecs?job_mode=0",
 	} {
 		assertGateAllowed(t, http.MethodGet, q, "")
 	}
@@ -341,7 +345,9 @@ func TestCheckRejectsExtraQueryFields(t *testing.T) {
 	for _, q := range []string{
 		"/api/playgrounds?result_status=success",
 		"/api/playgrounds?job_mode=true",
+		"/api/playgrounds?job_mode=1",
 		"/api/playspecs?job_mode=true",
+		"/api/playspecs?job_mode=1",
 		"/api/props?provider=" + excludedGitProviderName,
 		"/api/props?provider=bitbucket",
 	} {

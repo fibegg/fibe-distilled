@@ -285,8 +285,10 @@ func assertSupportedResourceListFilters(t *testing.T, srv *httptest.Server) {
 	assertListNames(t, srv, "/api/props?sort=name_asc", []string{"prop-filter-private", "prop-filter-public"})
 	assertListNames(t, srv, "/api/playspecs?name=playspec-filter&sort=name_asc", []string{"playspec-filter-locked", "playspec-filter-plain"})
 	assertListNames(t, srv, "/api/playspecs?locked=true", []string{"playspec-filter-locked"})
+	assertListNames(t, srv, "/api/playspecs?job_mode=false&sort=name_asc", []string{"playspec-filter-locked", "playspec-filter-plain"})
 	assertListNames(t, srv, "/api/playgrounds?name=PLAYGROUND-FILTER&sort=name_asc", []string{"playground-filter-error", "playground-filter-running"})
 	assertListNames(t, srv, "/api/playgrounds?name=playground-filter&sort=status_asc", []string{"playground-filter-error", "playground-filter-running"})
+	assertListNames(t, srv, "/api/playgrounds?job_mode=false&name=playground-filter&sort=name_asc", []string{"playground-filter-error", "playground-filter-running"})
 }
 
 func assertInvalidResourceListFilters(t *testing.T, srv *httptest.Server) {
@@ -312,7 +314,11 @@ func assertInvalidResourceListFilters(t *testing.T, srv *httptest.Server) {
 		"/api/props?private=maybe",
 		"/api/playspecs?locked=",
 		"/api/playspecs?locked=maybe",
+		"/api/playspecs?job_mode=",
+		"/api/playspecs?job_mode=maybe",
 		"/api/playgrounds?status=",
+		"/api/playgrounds?job_mode=",
+		"/api/playgrounds?job_mode=maybe",
 	} {
 		res := doReq(t, srv, http.MethodGet, path, nil, "test-token")
 		assertBadRequest(t, res, path)
@@ -324,6 +330,7 @@ func assertUnsupportedResourceListFilters(t *testing.T, srv *httptest.Server) {
 	for _, path := range []string{
 		"/api/playspecs?job_mode=true",
 		"/api/playgrounds?job_mode=true",
+		"/api/playgrounds?job_mode=1",
 		"/api/playgrounds?result_status=succeeded",
 		"/api/playgrounds?result_status=success",
 		"/api/props?provider=gitea",

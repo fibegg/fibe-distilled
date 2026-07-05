@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"time"
 
+	apilist "github.com/fibegg/fibe-distilled/internal/api/list"
 	"github.com/fibegg/fibe-distilled/internal/domain"
 )
 
@@ -47,6 +48,9 @@ func (h Handler) playgroundFilterParams(ctx context.Context, q url.Values) (play
 	marquee, err := h.queryMarqueeFilterID(ctx, q)
 	if err != nil {
 		return playgroundFilterParams{}, err
+	}
+	if _, err := apilist.QueryBool(q, "job_mode"); err != nil {
+		return playgroundFilterParams{}, badRequestError{message: err.Error()}
 	}
 	status, err := queryExact(q, "status")
 	if err != nil {

@@ -50,7 +50,7 @@ fi
 
 job_mode_hits="$(rg -n 'JobResult|job_result|job_results|job_mode|job_watch|target_type|result_status|only_services|except_services|services\._run|/api/tricks|\btricks\b|"_run"' cmd internal --glob '!**/*_test.go' || true)"
 if [ -n "$job_mode_hits" ]; then
-  disallowed_job_mode_hits="$(printf '%s\n' "$job_mode_hits" | rg -v '^internal/(compatgate/(compose_payload|payload_checks|registry|strict)\.go|composefile/(parse)\.go|composefile/service/(labels|service_override_validation)\.go|playground/creation\.go|playspec/services\.go):' || true)"
+  disallowed_job_mode_hits="$(printf '%s\n' "$job_mode_hits" | rg -v '^internal/(compatgate/(compose_payload|payload_checks|registry|strict)\.go|composefile/(parse)\.go|composefile/service/(labels|service_override_validation)\.go|playground/(creation|list_filters)\.go|playspec/(filters|services)\.go):' || true)"
   if [ -n "$disallowed_job_mode_hits" ]; then
     printf 'job-mode and JobResult code may only exist as explicit NOT_IMPLEMENTED compatgate rejection:\n%s\n' "$disallowed_job_mode_hits" >&2
     exit 1

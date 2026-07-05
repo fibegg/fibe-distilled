@@ -34,6 +34,12 @@ type filters struct {
 // filterParams parses Playspec filter query parameters.
 func filterParams(q url.Values) (filters, error) {
 	locked, err := apilist.QueryBool(q, "locked")
+	if err != nil {
+		return filters{}, err
+	}
+	if _, err := apilist.QueryBool(q, "job_mode"); err != nil {
+		return filters{}, err
+	}
 	return filters{query: q.Get("q"), name: q.Get("name"), locked: locked.Value, lockedSet: locked.Present}, err
 }
 

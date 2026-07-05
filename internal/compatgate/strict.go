@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // fieldSet is a constant-time membership set for accepted request fields.
@@ -28,10 +29,10 @@ func unsupportedQueryForOperation(operation string, q url.Values) []unsupportedI
 	case "props:list":
 		return unsupportedPropProviderQuery(q)
 	case "playspecs:list":
-		return rejectQueryPresence(q, "job_mode", "job-mode Playspec filtering belongs to Fibe Tricks and is not implemented in fibe-distilled")
+		return rejectTruthyQuery(q, "job_mode", "job-mode Playspec filtering belongs to Fibe Tricks and is not implemented in fibe-distilled")
 	case "playgrounds:list":
 		return append(
-			rejectQueryPresence(q, "job_mode", "job-mode Playground filtering belongs to Fibe Tricks and is not implemented in fibe-distilled"),
+			rejectTruthyQuery(q, "job_mode", "job-mode Playground filtering belongs to Fibe Tricks and is not implemented in fibe-distilled"),
 			rejectQueryPresence(q, "result_status", "JobResult filtering belongs to Fibe Tricks and is not implemented in fibe-distilled")...,
 		)
 	default:
@@ -56,6 +57,19 @@ func rejectQueryPresence(q url.Values, key string, reason string) []unsupportedI
 		return nil
 	}
 	return []unsupportedItem{{Key: "query:" + key, Reason: reason}}
+}
+
+// rejectTruthyQuery rejects a supported query key only when it asks for a skipped mode.
+func rejectTruthyQuery(q url.Values, key string, reason string) []unsupportedItem {
+	if _, ok := q[key]; !ok {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(q.Get(key))) {
+	case "true", "1":
+		return []unsupportedItem{{Key: "query:" + key, Reason: reason}}
+	default:
+		return nil
+	}
 }
 
 // allowedQueryFields returns query keys accepted for a supported operation.
