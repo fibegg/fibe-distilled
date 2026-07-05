@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+demo_hits="$(rg -n 'phoenix|backend-launch|api-people|people-api|fibe-distilled-app|service_subdomains\.api|service_subdomains\.frontend' cmd internal tools --glob '!**/*_test.go' || true)"
+if [ -n "$demo_hits" ]; then
+  printf 'production source contains app/demo-specific names:\n%s\n' "$demo_hits" >&2
+  exit 1
+fi
+
+alias_hits="$(rg -n 'apiSubdomain|frontendSubdomain|APISubdomain|FrontendSubdomain|api_subdomain|frontend_subdomain' cmd internal tools --glob '!**/*_test.go' || true)"
+if [ -n "$alias_hits" ]; then
+	disallowed_alias_hits="$(printf '%s\n' "$alias_hits" | rg -v '^internal/compatgate/(strict|payload_checks)\.go:' || true)"
+	if [ -n "$disallowed_alias_hits" ]; then
+		printf 'legacy launch aliases may only appear in compatgate rejection code:\n%s\n' "$disallowed_alias_hits" >&2
+		exit 1
+  fi
+fi
+
+service_literal_hits="$(rg -n '\["(api|frontend|backend|people|admin|web|app)"\]|[{,][[:space:]]*"(api|frontend|backend|people|admin|web|app)"[[:space:]]*:' cmd internal tools --glob '!**/*_test.go' || true)"
+if [ -n "$service_literal_hits" ]; then
+  disallowed_service_literals="$(printf '%s\n' "$service_literal_hits" | rg -v '^internal/prop/http_repo_status\.go:.*githubWritablePermissionKeys' || true)"
+  if [ -n "$disallowed_service_literals" ]; then
+    printf 'production source contains hardcoded sample service-name map keys or indexes:\n%s\n' "$disallowed_service_literals" >&2
+    exit 1
+  fi
+fi
+
+service_assignment_hits="$(rg -n '(service|serviceName|service_name|ServiceName)[[:space:]]*(:=|=|==|!=|:)[[:space:]]*"(api|frontend|backend|people|admin|web|app)"' cmd internal tools --glob '!**/*_test.go' || true)"
+if [ -n "$service_assignment_hits" ]; then
+	printf 'production source contains hardcoded sample service-name assignments or comparisons:\n%s\n' "$service_assignment_hits" >&2
+	exit 1
+fi

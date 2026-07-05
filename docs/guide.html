@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>fibe-distilled — Interactive Guide</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#111722; --bg3:#161d2b; --panel:#0f1623; --line:#243042;
+    --fg:#e6edf3; --mut:#9fb0c3; --dim:#6b7d92;
+    --acc:#4dabf7; --acc2:#74c0fc; --green:#3fb950; --amber:#e3b341; --red:#f85149; --purple:#bc8cff;
+    --can:#3fb950; --partial:#e3b341; --cannot:#f85149;
+    --radius:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:linear-gradient(180deg,#0b0f17,#0d1117 240px);color:var(--fg);font-family:var(--sans);line-height:1.55;font-size:15px}
+  a{color:var(--acc2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,kbd{font-family:var(--mono);font-size:.86em}
+  .layout{display:grid;grid-template-columns:248px 1fr;max-width:1280px;margin:0 auto;min-height:100vh}
+  /* sidebar */
+  nav.side{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:22px 14px 60px;border-right:1px solid var(--line);background:#0b0f17}
+  nav.side .brand{font-weight:800;font-size:18px;letter-spacing:.3px;margin:2px 8px 4px}
+  nav.side .brand span{color:var(--acc)}
+  nav.side .tag{margin:0 8px 18px;font-size:11px;color:var(--dim);font-family:var(--mono)}
+  nav.side a{display:block;color:var(--mut);padding:6px 10px;border-radius:8px;font-size:13.5px;border-left:2px solid transparent}
+  nav.side a:hover{background:var(--bg3);text-decoration:none;color:var(--fg)}
+  nav.side a.active{color:#fff;background:var(--bg3);border-left-color:var(--acc)}
+  nav.side .grp{margin:14px 8px 5px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+  /* main */
+  main{padding:34px 40px 120px;min-width:0}
+  header.hero{padding:14px 0 26px;border-bottom:1px solid var(--line);margin-bottom:30px}
+  header.hero h1{font-size:34px;margin:0 0 6px;font-weight:800}
+  header.hero h1 span{color:var(--acc)}
+  header.hero p.lede{font-size:16px;color:var(--mut);max-width:760px;margin:6px 0 0}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .pill{font-size:12px;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:var(--bg2);color:var(--mut)}
+  .pill b{color:var(--fg)}
+  section{margin:0 0 46px;scroll-margin-top:20px}
+  section>h2{font-size:23px;margin:0 0 4px;font-weight:750;display:flex;align-items:center;gap:10px}
+  section>h2:before{content:"";width:5px;height:22px;border-radius:3px;background:var(--acc)}
+  section>p.sub{color:var(--mut);margin:2px 0 20px;max-width:820px}
+  h3{font-size:17px;margin:26px 0 8px}
+  h4{font-size:14px;margin:18px 0 6px;color:var(--acc2);font-family:var(--mono);font-weight:600}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}.layout{grid-template-columns:1fr}nav.side{display:none}main{padding:24px 18px 90px}}
+  .mermaid{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin:16px 0;text-align:center;overflow-x:auto}
+  pre.code{position:relative;background:#0a0e15;border:1px solid var(--line);border-radius:10px;padding:14px 14px;overflow-x:auto;font-family:var(--mono);font-size:12.8px;color:#cbd6e2;margin:10px 0}
+  pre.code .cmt{color:var(--dim)}
+  .copy{position:absolute;top:8px;right:8px;background:var(--bg3);border:1px solid var(--line);color:var(--mut);font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer}
+  .copy:hover{color:#fff;border-color:var(--acc)}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em}
+  tr:hover td{background:#0e1420}
+  .mono{font-family:var(--mono)}
+  .badge{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.03em;font-family:var(--mono)}
+  .b-get{background:#11331f;color:#56d364;border:1px solid #1c5631}
+  .b-post{background:#0d2a44;color:#6cb6ff;border:1px solid #1b4a73}
+  .b-patch{background:#3a2d10;color:#e3b341;border:1px solid #6b531a}
+  .b-del{background:#3a1414;color:#ff7b72;border:1px solid #6b2020}
+  .b-all{background:#26202e;color:#bc8cff;border:1px solid #44375a}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  .d-can{background:var(--can)} .d-part{background:var(--partial)} .d-cant{background:var(--cannot)}
+  /* matrix */
+  .filterbar{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 16px}
+  .filterbar button{background:var(--bg2);border:1px solid var(--line);color:var(--mut);padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+  .filterbar button.on{color:#fff;border-color:var(--acc);background:#13283f}
+  .matrix{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:900px){.matrix{grid-template-columns:1fr}}
+  .mitem{background:var(--panel);border:1px solid var(--line);border-left-width:3px;border-radius:10px;padding:12px 14px}
+  .mitem.can{border-left-color:var(--can)} .mitem.partial{border-left-color:var(--partial)} .mitem.cannot{border-left-color:var(--cannot)}
+  .mitem .cap{font-weight:650;font-size:14px;margin-bottom:3px}
+  .mitem .det{font-size:12.6px;color:var(--mut)}
+  .parity{font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:4px;margin-left:6px;border:1px solid var(--line);color:var(--dim)}
+  .parity.full{color:#56d364;border-color:#1c5631}
+  .parity.close{color:#6cb6ff;border-color:#1b4a73}
+  .parity.simplified{color:#e3b341;border-color:#6b531a}
+  /* tabs */
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:10px 0 0}
+  .tabs button{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);padding:9px 13px;cursor:pointer;font-size:13px;font-weight:600}
+  .tabs button.on{color:#fff;border-bottom-color:var(--acc)}
+  .tabpane{display:none;padding-top:6px}
+  .tabpane.on{display:block}
+  ol.steps{margin:8px 0;padding-left:20px}
+  ol.steps li{margin:5px 0;color:var(--mut)}
+  /* issue cards */
+  .issue{border:1px solid var(--line);border-radius:10px;margin:10px 0;overflow:hidden;background:var(--panel)}
+  .issue summary{cursor:pointer;padding:12px 16px;font-weight:650;display:flex;align-items:center;gap:10px;list-style:none}
+  .issue summary::-webkit-details-marker{display:none}
+  .issue summary:after{content:"▸";margin-left:auto;color:var(--dim);transition:transform .15s}
+  .issue[open] summary:after{transform:rotate(90deg)}
+  .issue .body{padding:0 16px 14px;color:var(--mut);font-size:13.5px}
+  .sev{font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px;font-family:var(--mono)}
+  .sev.hi{background:#3a1414;color:#ff7b72} .sev.med{background:#3a2d10;color:#e3b341}
+  .sev.low{background:#1a2230;color:#9fb0c3} .sev.fixed{background:#11331f;color:#56d364}
+  .kv{font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .callout{border-left:3px solid var(--acc);background:#0e1825;padding:12px 16px;border-radius:0 10px 10px 0;margin:14px 0;font-size:13.5px;color:var(--mut)}
+  .callout.warn{border-left-color:var(--amber);background:#1c1709}
+  .callout.danger{border-left-color:var(--red);background:#1c0f0f}
+  .callout.ok{border-left-color:var(--green);background:#0c1a11}
+  .callout b{color:var(--fg)}
+  footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;color:var(--dim);font-size:12px}
+  .statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0 4px}
+  @media(max-width:900px){.statgrid{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+  .stat .n{font-size:26px;font-weight:800}
+  .stat .l{font-size:11.5px;color:var(--mut);margin-top:2px}
+  .n.g{color:var(--green)} .n.a{color:var(--amber)} .n.r{color:var(--red)} .n.b{color:var(--acc)}
+  /* print / PDF: drop the sidebar, single column, expand every tab + collapsible */
+  @media print{
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    nav.side{display:none}
+    .layout{display:block;max-width:none}
+    main{padding:0 8px}
+    .copy,.filterbar,.tabs{display:none!important}
+    .tabpane{display:block!important;border-top:1px solid var(--line);margin-top:8px}
+    .issue .body{display:block!important}
+    .mitem,.card,.mermaid,.issue,pre.code,table{break-inside:avoid}
+    section{break-inside:auto}
+    section>h2{break-after:avoid}
+    header.hero{break-after:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="side">
+  <div class="brand">mini-<span>fibe</span></div>
+  <div class="tag">single-binary · single-tenant</div>
+  <div class="grp">Start here</div>
+  <a href="#overview">Overview</a>
+  <a href="#quickstart">Quick start</a>
+  <a href="#architecture">Architecture</a>
+  <div class="grp">Concepts</div>
+  <a href="#concepts">Core concepts</a>
+  <a href="#lifecycle">Lifecycle &amp; Playguard</a>
+  <a href="#unsupported">Unsupported surfaces</a>
+  <a href="#builds">Source builds</a>
+  <div class="grp">Reference</div>
+  <a href="#matrix">Can vs Cannot (vs Fibe)</a>
+  <a href="#api">API reference</a>
+  <a href="#flows">Usage flows</a>
+  <a href="#env">Config / env vars</a>
+  <div class="grp">Ops</div>
+  <a href="#e2e">e2e &amp; isolation</a>
+  <a href="#status">Status &amp; known issues</a>
+</nav>
+
+<main>
+<header class="hero">
+  <h1>mini-<span>fibe</span> — Interactive Guide</h1>
+  <p class="lede">A self-hostable, <b>single-tenant</b> subset of the Fibe Platform as one Go binary + SQLite. Create
+  Playspecs and Playgrounds and launch them on one startup-configured local Docker-host <b>Marquee</b> — speaking enough of the
+  Fibe HTTP API that the real Fibe SDK and a curated slice of the Playwright API suite work unmodified.</p>
+  <div class="pills">
+    <span class="pill"><b>Go</b> single binary</span>
+    <span class="pill"><b>SQLite</b> persistence</span>
+    <span class="pill"><b>Docker socket</b> → Compose + Traefik</span>
+    <span class="pill"><b>Playguard</b> reconcile loop</span>
+    <span class="pill"><b>SDK</b>-compatible HTTP</span>
+    <span class="pill">e2e adapters <b>external</b></span>
+  </div>
+</header>
+
+<!-- OVERVIEW -->
+<section id="overview">
+  <h2>What fibe-distilled is (and isn't)</h2>
+  <p class="sub">Fibe is a general-purpose, multi-tenant SaaS for launching app environments. fibe-distilled extracts the
+  smallest reliable core of that — the create → launch → run loop on one Docker host — and deliberately drops
+  everything multi-tenant, AI, and UI.</p>
+  <div class="grid2">
+    <div class="card">
+      <h4>IS</h4>
+      <ul>
+        <li>A server-only JSON API compatible with a subset of the Fibe SDK / CLI / MCP.</li>
+        <li>Single owner, one static admin token.</li>
+        <li>Real local deploys: <span class="mono">docker compose up</span>, Traefik routing, real image builds.</li>
+        <li>Real runtime observation: container exit codes, health, logs read back through Docker.</li>
+        <li>An in-process Playguard loop (expiration, source sync, drift repair) — no external queue.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>IS NOT</h4>
+      <ul>
+        <li>No browser UI, sessions, or Rails views.</li>
+        <li>No multi-tenancy, teams, players, billing, or API-key CRUD.</li>
+        <li>No agents / Genies / chats / autonomous coding sidecars.</li>
+        <li>No Bazaar / templates / template-versions / import flows.</li>
+        <li>No GitHub App / OAuth, secret vault, DNS automation, or Gitea.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout ok"><b>Current status:</b> the scoped runtime audit items are remediated on the real
+  local Docker path. Health, builds, and lifecycle cleanup actions are driven by real container
+  state and persisted evidence. Public DNS / real Let's Encrypt issuance remains outside the default harness, and
+  scoped operational limitations are tracked separately — details in <a href="#status">Status &amp; known issues</a>.</div>
+</section>
+
+<!-- QUICK START -->
+<section id="quickstart">
+  <h2>Quick start</h2>
+  <p class="sub">The admin token, root domain, ACME email, Docker socket, and /opt/fibe mount are mandatory; the server refuses to boot without them.</p>
+  <div class="grid2">
+    <div>
+      <h4>Run from source</h4>
+<pre class="code"><button class="copy">copy</button><span class="cmt"># required</span>
+export FIBE_API_KEY=dev-token
+export FIBE_ROOT_DOMAIN=apps.example.com
+export FIBE_ACME_EMAIL=ops@example.com
+<span class="cmt"># optional</span>
+export FIBE_BUILD_PLATFORM=linux/amd64
+export GITHUB_TOKEN=ghp_xxx
+export GITHUB_WEBHOOK_SECRET=webhook-secret
+export FIBE_PLAYGUARD_INTERVAL_SECONDS=30
+export DOCKERHUB_USERNAME=... DOCKERHUB_TOKEN=...
+
+go run ./cmd/fibe-distilled</pre>
+    </div>
+    <div>
+      <h4>Build &amp; verify</h4>
+<pre class="code"><button class="copy">copy</button><span class="cmt"># production binary</span>
+go build -tags sqlite_omit_load_extension -o ./bin/fibe-distilled ./cmd/fibe-distilled
+
+<span class="cmt"># tests + alloy gate</span>
+go test ./...
+./bin/check</pre>
+    </div>
+  </div>
+  <h4>Smoke test</h4>
+<pre class="code"><button class="copy">copy</button>curl -s http://localhost:2402/up.json                  <span class="cmt"># {"status":"ok"} (no auth)</span>
+curl -s -H 'Authorization: Bearer dev-token' \
+     http://localhost:2402/api/me                      <span class="cmt"># fixed owner identity + SDK admin-scope hint</span></pre>
+  <div class="callout">Point the <b>Fibe SDK</b> at fibe-distilled with <span class="mono">FIBE_DOMAIN=http://localhost:2402</span>
+  and <span class="mono">FIBE_API_KEY=$FIBE_API_KEY</span>. The same SDK calls for read-only Marquee discovery, Props,
+  Playspecs, Playgrounds, launches, logs, and status work against the subset.</div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <h2>Architecture</h2>
+  <p class="sub">One binary holds the API, the worker, the Playguard ticker, and SQLite. The runtime dependency is the
+  local Docker socket plus <span class="mono">/opt/fibe</span>, where Docker Compose + a shared Traefik run workloads.</p>
+  <pre class="mermaid">
+flowchart LR
+  subgraph clients["Clients"]
+    SDK["Fibe Go SDK / CLI / MCP"]
+    PW["Playwright API tests"]
+    HTTP["curl / HTTP"]
+  end
+  subgraph binary["fibe-distilled — single Go binary"]
+    AUTH["Static bearer auth"]
+    API["HTTP API /api/*"]
+    WK["Worker (deploy / build / observe)"]
+    PG["Playguard ticker"]
+    DB[("SQLite")]
+  end
+  subgraph marquee["Marquee — local Docker host /opt/fibe"]
+    TR["Traefik (shared, HTTP/HTTPS)"]
+    PROJ["docker compose projects"]
+  end
+  SDK --> AUTH
+  PW --> AUTH
+  HTTP --> AUTH
+  AUTH --> API --> WK
+  WK <--> DB
+  PG <--> DB
+  WK -- "local docker: compose up / build / ps / logs" --> PROJ
+  PG -- "local docker: ps / drift / expire" --> PROJ
+  TR -. routes .-> PROJ
+  </pre>
+  <div class="grid3">
+    <div class="card"><h4>API layer</h4><span class="det">Fibe-shaped responses: <span class="mono">{data,meta}</span>
+      list envelopes, <span class="mono">{error:{code,message,details}}</span>, X-Request-Id, name-or-ID lookup,
+      async <span class="mono">202 + status_url</span> polling.</span></div>
+    <div class="card"><h4>Worker</h4><span class="det">Renders compose (+Traefik +x-fibe.gg vars), syncs git source,
+      runs real local builds, deploys, then observes real container state.</span></div>
+    <div class="card"><h4>Playguard</h4><span class="det">Ticker (default 30s): expiration
+      reaper, source sync, runtime drift detect + repair.</span></div>
+  </div>
+</section>
+
+<!-- CONCEPTS -->
+<section id="concepts">
+  <h2>Core concepts</h2>
+  <p class="sub">The minimal object model — each maps 1:1 to a Fibe concept and an SDK resource.</p>
+  <table>
+    <tr><th>Concept</th><th>What it is in fibe-distilled</th><th>Notes vs Fibe</th></tr>
+    <tr><td><b>Marquee</b></td><td>The single startup-configured local Docker host. Env holds root domain, ACME email, and optional build platform; startup checks Docker, Compose, the socket, Traefik, and writable <span class="mono">/opt/fibe</span>.</td><td>Read-only API discovery only; no public CRUD, Terraform-managed hosts, DNS automation, or legacy key generation.</td></tr>
+    <tr><td><b>Prop</b> / <b>PropBranch</b></td><td>A GitHub repo reference. Sync reads default branch, branch list, and remote head SHAs from the GitHub API.</td><td>Real reads via one PAT; no Gitea, no GitHub App, no env-file reads.</td></tr>
+    <tr><td><b>Playspec</b></td><td>A validated compose document + extracted service summaries (<span class="mono">fibe.gg/*</span> labels, <span class="mono">x-fibe.gg</span> variables).</td><td>Stateless: <span class="mono">persist_volumes</span> / zero-downtime / healthcheck-override labels are rejected (501).</td></tr>
+    <tr><td><b>Playground</b></td><td>A running instance of a Playspec on a Marquee — deployed via compose, routed by Traefik, observed for real status/health.</td><td>Default TTL 8h; lifecycle ops stop/start/hard_restart/rollout.</td></tr>
+    <tr><td><b>Tricks / Job-mode</b></td><td>Explicitly unsupported in fibe-distilled. The compatibility gate rejects <span class="mono">job_mode</span>, <span class="mono">fibe.gg/job_watch</span>, <span class="mono">result_status</span>, and <span class="mono">/api/tricks</span>.</td><td>Full Fibe only; fibe-distilled returns structured 501s.</td></tr>
+    <tr><td><b>BuildRecord</b></td><td>A real local <span class="mono">docker build</span> result, keyed by commit SHA + build-identity digest, with verified image reuse.</td><td>Failures recorded + propagated; old in-flight records are ignored by reuse.</td></tr>
+    <tr><td><b>Playguard</b></td><td>The in-process reconcile loop that makes the loop reliable (expiry / source sync / drift / repair).</td><td>Single goroutine; Fibe fans out per-marquee ActiveJobs.</td></tr>
+  </table>
+</section>
+
+<!-- LIFECYCLE -->
+<section id="lifecycle">
+  <h2>Lifecycle &amp; Playguard</h2>
+  <p class="sub">Playground status is driven by real deploy steps and continuously reconciled against the host.</p>
+  <pre class="mermaid">
+stateDiagram-v2
+  [*] --> pending
+  pending --> in_progress: deploy starts
+  in_progress --> running: compose up OK
+  in_progress --> error: build/deploy fail
+  running --> stopping: stop
+  stopping --> stopped
+  stopped --> running: start
+  running --> running: hard_restart (down + redeploy)
+  running --> has_changes: dirty source on expiry/sync
+  error --> running: drift repair / rollout
+  running --> [*]: expire (destroy + delete)
+  </pre>
+  <div class="grid2">
+    <div class="card"><h4>Deploy steps (creation_steps)</h4>
+      <span class="det">compose_render → source_sync → builds → compose_deploy → runtime_observe → finalize. Each step is
+      timestamped and surfaced in <span class="mono">/status</span>; a failed step
+      preserves the playground in <span class="mono">error</span> state with classified diagnostics.</span></div>
+    <div class="card"><h4>Playguard each tick</h4>
+      <span class="det">Per playground: enforce expiration
+      (skip if source dirty), sync sources, re-inspect runtime, detect image/artifact drift and repair.</span></div>
+  </div>
+  <div class="callout warn"><b>Latency knob:</b> Playguard runs every
+  <span class="mono">FIBE_PLAYGUARD_INTERVAL_SECONDS</span> seconds (default 30s; e2e harness uses 1s).
+  A <span class="mono">POST /status</span> can force a live runtime refresh when clients need immediate state.</div>
+</section>
+
+<!-- UNSUPPORTED -->
+<section id="unsupported">
+  <h2>Unsupported Fibe surfaces</h2>
+  <p class="sub">fibe-distilled is a normal-Playground runtime subset. Full Fibe job-mode/Tricks calls fail fast before business handlers run.</p>
+  <pre class="mermaid">
+sequenceDiagram
+  participant C as Client
+  participant API as API
+  C->>API: POST /api/playgrounds {job_mode:true, marquee_id}
+  API-->>C: 501 NOT_IMPLEMENTED
+  C->>API: POST /api/tricks
+  API-->>C: 501 NOT_IMPLEMENTED
+  </pre>
+  <div class="callout warn"><b>Rejected job-mode inputs:</b> <span class="mono">job_mode</span>,
+  <span class="mono">target_type=trick</span>, <span class="mono">fibe.gg/job_watch</span>,
+  <span class="mono">services[].job_watch</span>, <span class="mono">only_services</span>,
+  <span class="mono">except_services</span>, <span class="mono">services._run</span>,
+  <span class="mono">result_status</span>, and <span class="mono">/api/tricks</span>.</div>
+</section>
+
+<!-- BUILDS -->
+<section id="builds">
+  <h2>Source builds</h2>
+  <p class="sub">For services with a <span class="mono">build:</span> + <span class="mono">fibe.gg/repo_url</span>, the
+  source is cloned on the Marquee and built remotely — with verified BuildRecord reuse.</p>
+  <pre class="mermaid">
+flowchart LR
+  A["build: service + fibe.gg/repo_url"] --> B["git clone / pull source on Marquee"]
+  B --> C{"prior BuildRecord image exists for commit + identity digest?"}
+  C -- yes --> D["reuse image (Reused=true)"]
+  C -- no --> E["docker build with commit SHA + identity labels"]
+  E --> F["BuildRecord: success/failed + real logs + image ref"]
+  D --> F
+  F --> G["image ref injected into rendered compose"]
+  </pre>
+  <div class="callout">Build identity = digest of <span class="mono">{dockerfile, target, build_args}</span>. Stale builds
+  (stuck &gt; 45m) are recovered to success only if a host image with the matching commit + identity digest actually
+  exists; otherwise they are marked failed. DockerHub creds (if set) are written to a per-playground docker-config to
+  avoid anonymous pull rate limits.</div>
+</section>
+
+<!-- MATRIX -->
+<section id="matrix">
+  <h2>Can vs Cannot — measured against Fibe</h2>
+  <p class="sub">Filter the full capability matrix. <span class="dot d-can"></span>Can &nbsp;
+    <span class="dot d-part"></span>Partial &nbsp; <span class="dot d-cant"></span>Cannot (excluded / 501).</p>
+  <div class="filterbar">
+    <button data-f="all" class="on">All</button>
+    <button data-f="can"><span class="dot d-can"></span>Can</button>
+    <button data-f="partial"><span class="dot d-part"></span>Partial</button>
+    <button data-f="cannot"><span class="dot d-cant"></span>Cannot</button>
+  </div>
+  <div class="matrix" id="matrix">
+    <!-- CAN -->
+    <div class="mitem can" data-cat="can"><div class="cap">Static bearer auth<span class="parity simplified">simplified</span></div><div class="det">Every <span class="mono">/api/*</span> request is gated by the single startup admin token. No production token minting, token storage, or scope enforcement.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Identity / status introspection<span class="parity close">close</span></div><div class="det"><span class="mono">/api/me</span>, <span class="mono">/api/status</span>, <span class="mono">/api/server-info</span>, <span class="mono">/up.json</span>.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Configured Marquee discovery<span class="parity simplified">simplified</span></div><div class="det">Read-only list/show + name-or-ID lookup for the startup-configured Marquee; legacy rows are hidden from public API output.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Runtime Docker prerequisite checks<span class="parity simplified">simplified</span></div><div class="det">Startup checks the Docker socket, Docker API, Docker CLI, Compose plugin, Traefik, and writable <span class="mono">/opt/fibe/{playgrounds,traefik,builds}</span>.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Props CRUD + GitHub branch sync<span class="parity simplified">simplified</span></div><div class="det">Real GitHub reads: default branch, branch list, and remote head SHA. Env values come from Compose or explicit launch overrides.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Repo writability checks<span class="parity simplified">simplified</span></div><div class="det"><span class="mono">/api/repo_status_checks</span> + launch/props gate on push access (422 REPOSITORY_REQUIRES_FORK).</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Playspecs CRUD + internal compose checks<span class="parity close">close</span></div><div class="det">Checks <span class="mono">fibe.gg/*</span> labels, ports, and path rules during create/update; extracts service summaries. Stateful (zero-downtime / healthcheck override) labels are rejected as out of the stateless runtime scope.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">x-fibe.gg launch variables<span class="parity simplified">simplified</span></div><div class="det">Declarations, defaults, required, regex validation, <span class="mono">random:true</span> secrets, inline <span class="mono">$$var__</span> + <span class="mono">$$root_domain</span>, path/paths node binding.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Launch endpoint (caller-supplied compose)<span class="parity simplified">simplified</span></div><div class="det"><span class="mono">/api/launches</span> creates Playspec (+Prop) and optionally deploys a Playground from supplied <span class="mono">compose_yaml</span>; repository URLs are metadata and source-sync inputs.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Playgrounds lifecycle<span class="parity simplified">simplified</span></div><div class="det">create/list/get/update/delete + status/logs/operations/expiration; generated compose and runtime diagnostics stay internal.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Lifecycle ops: rollout/start/stop/hard_restart<span class="parity simplified">simplified</span></div><div class="det">Real local effect: StartCompose / StopCompose / DownCompose+redeploy.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Marquee deploy + Traefik routing<span class="parity simplified">simplified</span></div><div class="det">One shared Traefik per host; compose under <span class="mono">/opt/fibe/playgrounds/&lt;project&gt;</span>; host rule routing; ports stripped.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">HTTPS / Let's Encrypt labels<span class="parity simplified">simplified</span></div><div class="det">HTTPS is always enabled: websecure + web→websecure redirect + ACME HTTP-01; internal services get bcrypt basic-auth.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Real local image builds<span class="parity simplified">simplified</span></div><div class="det">Commit SHA + build-identity digest, verified BuildRecord reuse, failures recorded + propagated.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">In-process Playguard reconciliation<span class="parity simplified">simplified</span></div><div class="det">Expiration, source sync, drift repair — single binary.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Expiration enforcement (dirty-skip)<span class="parity simplified">simplified</span></div><div class="det">Reaper destroys expired playgrounds, but skips git-dirty sources (→ has_changes).</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Async operation polling<span class="parity close">close</span></div><div class="det">202 + <span class="mono">status_url</span>; goroutine-backed; SDK doAsync-compatible; interrupted ops recovered on startup.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">Runtime failure classification<span class="parity simplified">simplified</span></div><div class="det">Docker/Compose + source-sync errors categorized in Playground status, logs, and stored error details.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">List envelopes / request IDs / name-or-ID<span class="parity close">close</span></div><div class="det">Fibe-shaped <span class="mono">{data,meta}</span>, X-Request-Id, structured errors across all resources.</div></div>
+    <div class="mitem can" data-cat="can"><div class="cap">External docker-e2e proxy<span class="parity close">close</span></div><div class="det">SDK/Playwright bootstrap + GitHub PAT attach compatibility lives in <span class="mono">fibe-distilled-e2e</span>, not this binary.</div></div>
+    <!-- PARTIAL -->
+    <div class="mitem can" data-cat="can"><div class="cap">x-fibe.gg variables<span class="parity close">close</span></div><div class="det">Inline <span class="mono">$$var__</span>, inline <span class="mono">$$random__NAME</span>, <span class="mono">$$root_domain</span>, <span class="mono">path</span>/<span class="mono">paths</span>, defaults, required checks, random values, and regex validation.</div></div>
+    <div class="mitem partial" data-cat="partial"><div class="cap">Traefik label parity</div><div class="det">Functional, but certresolver hardcoded to <span class="mono">letsencrypt</span>; no configurable/wildcard resolver, no user router-label hashing; bcrypt basic-auth instead of Fibe's broader visibility model.</div></div>
+    <div class="mitem partial" data-cat="partial"><div class="cap">HTTPS / public DNS / TLS</div><div class="det">HTTPS labels are generated by default; e2e marquee is private to Docker → does not prove public DNS reachability or real Let's Encrypt issuance. No DNS automation, no uploaded certs.</div></div>
+    <div class="mitem partial" data-cat="partial"><div class="cap">Playground logs</div><div class="det">Real <span class="mono">docker compose logs</span> through the local Docker CLI with all-service aggregation or a selected service; no streaming/follow.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Job-mode / Tricks / JobResults</div><div class="det"><span class="mono">job_mode</span>, <span class="mono">fibe.gg/job_watch</span>, run selectors, <span class="mono">result_status</span>, and <span class="mono">/api/tricks</span> return 501.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Stateful playspecs / persistent volumes</div><div class="det">fibe-distilled Playgrounds are <b>stateless</b>: <span class="mono">persist_volumes</span> is rejected (501). No volume snapshot/restore or version-aware migration.</div></div>
+    <div class="mitem partial" data-cat="partial"><div class="cap">GitHub integration</div><div class="det">Real API reads for repository permissions and branches via one token, plus signed receive-only push webhooks. No GitHub file reads, GitHub App, OAuth, installations, or webhook CRUD.</div></div>
+    <div class="mitem partial" data-cat="partial"><div class="cap">Build overrides</div><div class="det"><span class="mono">fibe.gg/build_target</span> + <span class="mono">build_args</span> labels supported; a playground-level <span class="mono">build_overrides_yaml</span> field returns 501.</div></div>
+    <!-- CANNOT -->
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Multi-tenancy / teams / players / sessions / 2FA</div><div class="det">Single fixed owner; no team/member/session/WebAuthn/TOTP. Excluded by design.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Billing / subscriptions / plan limits / credits</div><div class="det"><span class="mono">/api/status</span> returns a static <span class="mono">fibe-distilled</span> plan stub.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Agents / Genies / chats / coding sidecars</div><div class="det">No routes; any agent path → 501. AI features fully excluded.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">API-key CRUD / scoped key management</div><div class="det"><span class="mono">/api/api_keys</span> → 501; no production token minting endpoint.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">GitHub Apps / OAuth / installations</div><div class="det"><span class="mono">/api/github_apps</span> → 501; raw PAT only.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Templates / Versions / Bazaar / import / template switch</div><div class="det"><span class="mono">/api/import_templates</span> → 501; SwitchPlaygroundTemplate unrouted → 501.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Secret vault / Job ENV management</div><div class="det"><span class="mono">/api/secrets</span>, <span class="mono">/api/job_env</span> → 501.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Webhook management</div><div class="det"><span class="mono">/api/webhook_endpoints</span> → 501; GitHub repository webhooks are configured manually and delivered to <span class="mono">/webhooks/github</span>.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Audit logs / feedback / mutters / memories / artefacts</div><div class="det">All → 501 / catch-all 501.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Cron schedules / VCS triggers / mutation-testing</div><div class="det">No schedule_config / trigger_config; job-mode/Tricks are outside this extraction.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Public Marquee management</div><div class="det"><span class="mono">POST/PATCH/DELETE /api/marquees</span> and connection-test/provisioning routes return 501; configure the Marquee with env vars before startup.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Marquee key generation</div><div class="det"><span class="mono">/api/marquees/{id}/ssh_keys</span> → 501; fibe-distilled does not manage external host keys.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">DNS automation / uploaded TLS / Terraform marquees</div><div class="det">No DNS or cert-upload routes; certresolver fixed to LE http-challenge.</div></div>
+    <div class="mitem cannot" data-cat="cannot"><div class="cap">Browser UI / data export-import / Gitea</div><div class="det">JSON-API only; no HTML/session routes, no export/import, no built-in Git hosting.</div></div>
+  </div>
+</section>
+
+<!-- API -->
+<section id="api">
+  <h2>API reference</h2>
+  <p class="sub">All <span class="mono">/api/*</span> routes require <span class="mono">Authorization: Bearer &lt;token&gt;</span>.
+  fibe-distilled has one startup admin token and does not mint, store, or enforce scoped production API keys.
+  <span class="mono">{identifier}</span> accepts an ID or a name.</p>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Purpose</th></tr>
+    <tr><td><span class="badge b-get">GET</span></td><td class="mono">/up.json</td><td>Liveness. <b>No auth.</b></td></tr>
+    <tr><td><span class="badge b-get">GET</span></td><td class="mono">/api/me · /api/status · /api/server-info</td><td>Fixed owner identity · aggregate counts · feature flags.</td></tr>
+    <tr><td><span class="badge b-get">GET</span></td><td class="mono">/api/async_requests/{id}</td><td>Poll an async op: queued / running / success(+payload) / error.</td></tr>
+    <tr><td colspan="3" style="color:var(--acc2);font-family:var(--mono);font-size:11px;padding-top:14px">MARQUEES</td></tr>
+    <tr><td><span class="badge b-get">GET</span></td><td class="mono">/api/marquees</td><td>List the startup-configured Marquee only.</td></tr>
+    <tr><td><span class="badge b-get">GET</span></td><td class="mono">/api/marquees/{identifier}</td><td>Get the startup-configured Marquee by ID or name.</td></tr>
+    <tr><td><span class="badge b-post">POST</span> <span class="badge b-patch">PATCH</span> <span class="badge b-del">DEL</span></td><td class="mono">/api/marquees · /api/marquees/{identifier}</td><td><span style="color:var(--red)">501</span> — configure the Marquee with startup env vars.</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/marquees/{identifier}/connection_tests</td><td><span style="color:var(--red)">501</span> — deploy/status paths perform runtime prerequisite checks.</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/marquees/{identifier}/ssh_keys</td><td><span style="color:var(--red)">501</span> — fibe-distilled does not manage external host keys.</td></tr>
+    <tr><td colspan="3" style="color:var(--acc2);font-family:var(--mono);font-size:11px;padding-top:14px">PROPS</td></tr>
+    <tr><td><span class="badge b-get">GET</span> <span class="badge b-post">POST</span></td><td class="mono">/api/props</td><td>List / create (repository_url required, gated on write access).</td></tr>
+    <tr><td><span class="badge b-get">GET</span> <span class="badge b-patch">PATCH</span> <span class="badge b-del">DEL</span></td><td class="mono">/api/props/{identifier}</td><td>Get / update / delete.</td></tr>
+    <tr><td><span class="badge b-get">GET</span></td><td class="mono">/api/props/{identifier}/branches</td><td>Branch list with default branch and head SHA metadata.</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/props/{identifier}/syncs</td><td>Sync branch metadata from GitHub.</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/repo_status_checks</td><td>Check GitHub repo readability/writability.</td></tr>
+    <tr><td colspan="3" style="color:var(--acc2);font-family:var(--mono);font-size:11px;padding-top:14px">PLAYSPECS</td></tr>
+    <tr><td><span class="badge b-get">GET</span> <span class="badge b-post">POST</span></td><td class="mono">/api/playspecs</td><td>List / create (name + base_compose_yaml; checked during write).</td></tr>
+    <tr><td><span class="badge b-get">GET</span> <span class="badge b-patch">PATCH</span> <span class="badge b-del">DEL</span></td><td class="mono">/api/playspecs/{identifier}</td><td>Get / update / delete (409 if referenced).</td></tr>
+    <tr><td><span class="badge b-get">GET</span></td><td class="mono">/api/playspecs/{identifier}/services</td><td>Extracted service summaries.</td></tr>
+    <tr><td colspan="3" style="color:var(--acc2);font-family:var(--mono);font-size:11px;padding-top:14px">LAUNCH &amp; PLAYGROUNDS</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/launches</td><td>One-shot Playspec(+Prop)(+Playground) from caller-supplied compose_yaml.</td></tr>
+    <tr><td><span class="badge b-get">GET</span> <span class="badge b-post">POST</span></td><td class="mono">/api/playgrounds</td><td>List (filters) / create + deploy (name + playspec_id; marquee_id targets host).</td></tr>
+    <tr><td><span class="badge b-get">GET</span> <span class="badge b-patch">PATCH</span> <span class="badge b-del">DEL</span></td><td class="mono">/api/playgrounds/{identifier}</td><td>Get / update / destroy (compose down + remove).</td></tr>
+    <tr><td><span class="badge b-get">GET</span> <span class="badge b-post">POST</span></td><td class="mono">/api/playgrounds/{identifier}/status</td><td>Get cached status / force live re-inspect.</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/playgrounds/{identifier}/logs</td><td>Async fetch logs for a named service → 202 + status_url.</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/playgrounds/{identifier}/operations</td><td>rollout / retry_compose / start / hard_restart / stop → 202.</td></tr>
+    <tr><td><span class="badge b-post">POST</span></td><td class="mono">/api/playgrounds/{identifier}/expiration</td><td>Extend TTL (duration_hours / never_expire).</td></tr>
+    <tr><td colspan="3" style="color:var(--acc2);font-family:var(--mono);font-size:11px;padding-top:14px">EXCLUDED</td></tr>
+    <tr><td><span class="badge b-all">ALL</span></td><td class="mono">/api/{api_keys,github_apps,import_templates,webhook_endpoints,secrets,job_env,feedbacks,mutters,memories,audit_logs,…}</td><td><span style="color:var(--red)">501 NOT_IMPLEMENTED</span> — excluded surfaces (+ catch-all <span class="mono">/api/</span>).</td></tr>
+  </table>
+</section>
+
+<!-- FLOWS -->
+<section id="flows">
+  <h2>Usage flows</h2>
+  <p class="sub">Copy-paste recipes. Set <span class="mono">TOK='Authorization: Bearer dev-token'</span> and
+  <span class="mono">BASE=http://localhost:2402</span> first.</p>
+  <div class="tabs" id="flowtabs">
+    <button class="on" data-t="f1">Marquee</button>
+    <button data-t="f2">Playspec</button>
+    <button data-t="f3">Playground</button>
+    <button data-t="f4">Unsupported</button>
+    <button data-t="f5">Launch</button>
+    <button data-t="f6">SDK</button>
+    <button data-t="f7">docker-e2e</button>
+  </div>
+  <div class="tabpane on" id="f1">
+<pre class="code"><button class="copy">copy</button><span class="cmt"># Configure the single Marquee before starting fibe-distilled</span>
+export FIBE_API_KEY=dev-token
+export FIBE_ROOT_DOMAIN=apps.example.com
+export FIBE_ACME_EMAIL=ops@example.com
+export FIBE_BUILD_PLATFORM=linux/amd64  <span class="cmt"># optional</span>
+
+go run ./cmd/fibe-distilled
+
+<span class="cmt"># Discover it through the read-only Fibe-compatible API</span>
+curl -s $BASE/api/marquees -H "$TOK"
+curl -s $BASE/api/marquees/default -H "$TOK"</pre>
+  </div>
+  <div class="tabpane" id="f2">
+<pre class="code"><button class="copy">copy</button><span class="cmt"># Create a Playspec from compose; fibe-distilled validates compose inside create/update</span>
+curl -s -X POST $BASE/api/playspecs -H "$TOK" -H 'Content-Type: application/json' -d '{
+  "playspec":{"name":"web-spec",
+  "base_compose_yaml":"services:\n  web:\n    image: nginx\n    labels:\n      fibe.gg/subdomain: web\n"}}'
+
+curl -s $BASE/api/playspecs/web-spec/services -H "$TOK"   <span class="cmt"># extracted services</span></pre>
+  </div>
+  <div class="tabpane" id="f3">
+<pre class="code"><button class="copy">copy</button><span class="cmt"># Create + deploy a Playground (deploy runs inside the request), then poll to running</span>
+curl -s -X POST $BASE/api/playgrounds -H "$TOK" -H 'Content-Type: application/json' -d '{
+  "playground":{"name":"web-pg","playspec_id":&lt;PLAYSPEC_ID&gt;,
+  "env_overrides":{"FOO":"bar"}}}'                                  <span class="cmt"># 201</span>
+
+curl -s $BASE/api/playgrounds/web-pg/status -H "$TOK"               <span class="cmt"># status, service_urls, build_statuses</span>
+curl -s -X POST $BASE/api/playgrounds/web-pg/status -H "$TOK"       <span class="cmt"># force live re-inspect</span></pre>
+  </div>
+  <div class="tabpane" id="f4">
+<pre class="code"><button class="copy">copy</button><span class="cmt"># Full Fibe job-mode/Tricks calls fail fast in fibe-distilled.</span>
+curl -s -X POST $BASE/api/playgrounds -H "$TOK" -H 'Content-Type: application/json' -d '{
+  "playground":{"name":"job-pg","playspec_id":&lt;PLAYSPEC_ID&gt;,"marquee_id":&lt;MARQUEE_ID&gt;,"job_mode":true}}'
+
+<span class="cmt"># => 501 NOT_IMPLEMENTED. job-mode/Tricks are Full Fibe only in this extraction.</span>
+</pre>
+  </div>
+  <div class="tabpane" id="f5">
+<pre class="code"><button class="copy">copy</button><span class="cmt"># Launch from caller-supplied compose with optional GitHub source metadata; repo must be writable when supplied</span>
+curl -s -X POST $BASE/api/launches -H "$TOK" -H 'Content-Type: application/json' -d '{
+  "name":"repo-backed-web",
+  "repository_url":"https://github.com/owner/repo",
+  "compose_yaml":"services:\n  web:\n    image: nginx\n    labels:\n      fibe.gg/subdomain: web\n",
+  "create_playground":true}'
+<span class="cmt"># => {playspec_id, playground_id, props_created, source}. Non-writable repo => 422 REPOSITORY_REQUIRES_FORK</span></pre>
+  </div>
+  <div class="tabpane" id="f6">
+<pre class="code"><button class="copy">copy</button><span class="cmt"># Drive fibe-distilled with the real Fibe Go SDK</span>
+export FIBE_DOMAIN=http://localhost:2402     <span class="cmt"># SDK base URL</span>
+export FIBE_API_KEY=dev-token
+
+<span class="cmt"># Go: client := fibe.NewClient()  // reads FIBE_DOMAIN / FIBE_API_KEY</span>
+<span class="cmt"># client.Playspecs / client.Playgrounds / read-only client.Marquees / Launches / Logs work against the subset</span></pre>
+  </div>
+  <div class="tabpane" id="f7">
+<pre class="code"><button class="copy">copy</button><span class="cmt"># docker-e2e lives in ../fibe-distilled-e2e: fibe-distilled + e2e-proxy + dind Marquee + sdk + playwright + runtime-smoke + results</span>
+cd ../fibe-distilled-e2e
+export FIBEDISTILLED_APP_PATH=../fibe-distilled
+GH=$(gh auth token)
+GITHUB_PAT="$GH" GITHUB_TOKEN="$GH" \
+DOCKERHUB_USERNAME=... DOCKERHUB_TOKEN=... \
+./bin/docker-e2e
+<span class="cmt"># fibe-distilled image is built normally; e2e-proxy owns SDK/Playwright bootstrap compatibility.</span>
+<span class="cmt"># Narrow: GO_TEST_RUN=... GO_TEST_RUNS=... PLAYWRIGHT_TEST_TARGETS=... PLAYWRIGHT_TEST_GREP=...</span></pre>
+  </div>
+</section>
+
+<!-- ENV -->
+<section id="env">
+  <h2>Config / environment</h2>
+  <p class="sub">Server-side env (read by the binary) vs client-side env (read by the SDK/CLI).</p>
+  <table>
+    <tr><th>Variable</th><th>Req?</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td class="mono">FIBE_API_KEY</td><td style="color:var(--red)">yes</td><td>—</td><td>Static admin bearer token for all <span class="mono">/api/*</span>. No boot without it.</td></tr>
+    <tr><td class="mono">FIBE_ROOT_DOMAIN</td><td style="color:var(--red)">yes</td><td>—</td><td>Single DNS hostname with at least one dot for routed Playgrounds on the configured Marquee; no scheme, path, port, spaces, or multiple domains.</td></tr>
+    <tr><td class="mono">FIBE_ACME_EMAIL</td><td style="color:var(--red)">yes</td><td>—</td><td>Let's Encrypt HTTP-01 account email for always-on HTTPS.</td></tr>
+    <tr><td class="mono">FIBE_BUILD_PLATFORM</td><td>no</td><td>—</td><td>Optional Docker build platform for local BuildRecords.</td></tr>
+    <tr><td class="mono">GITHUB_TOKEN</td><td>no</td><td>—</td><td>Default PAT for GitHub repo checks and private source sync. Fibe-distilled does not fetch Compose config or env-default files from repositories, and Compose <span class="mono">env_file</span> is unsupported.</td></tr>
+    <tr><td class="mono">GITHUB_WEBHOOK_SECRET</td><td>no</td><td>—</td><td>Shared secret for signed GitHub <span class="mono">push</span> deliveries to <span class="mono">/webhooks/github</span>. Without it the endpoint returns 401.</td></tr>
+    <tr><td class="mono">(fixed)</td><td>—</td><td class="mono">:2402</td><td>HTTP listen address. There is no env override.</td></tr>
+    <tr><td class="mono">FIBE_DB_PATH</td><td>no</td><td class="mono">./data/fibe-distilled.sqlite3</td><td>SQLite file (parent dir auto-created 0700).</td></tr>
+    <tr><td class="mono">FIBE_DATA_DIR</td><td>no</td><td class="mono">./data</td><td>Data directory (auto-created 0700).</td></tr>
+    <tr><td class="mono">FIBE_PLAYGUARD_INTERVAL_SECONDS</td><td>no</td><td class="mono">30</td><td>Reconcile tick → expiry / drift latency. e2e uses 1.</td></tr>
+    <tr><td class="mono">DOCKERHUB_USERNAME / DOCKERHUB_TOKEN</td><td>no</td><td>—</td><td>Authed pulls on the local Docker host (avoid anonymous rate limits).</td></tr>
+    <tr><td class="mono">FIBE_DOMAIN</td><td>no</td><td class="mono">(SDK)</td><td><b>Client-side.</b> Base URL the SDK targets — set to your fibe-distilled.</td></tr>
+    <tr><td class="mono">FIBE_API_KEY</td><td>no</td><td>—</td><td><b>Client-side.</b> Bearer token the SDK sends — set equal to the server-side value.</td></tr>
+  </table>
+</section>
+
+<!-- E2E -->
+<section id="e2e">
+  <h2>e2e &amp; module isolation</h2>
+  <p class="sub">Docker-e2e bootstrap adapters live in <span class="mono">fibe-distilled-e2e</span>. fibe-distilled keeps only production routes.
+  The fake runtime executor is a Go test helper and is not imported by the production binary.</p>
+  <pre class="mermaid">
+flowchart TD
+  SRC["source tree"] --> PROD["go build -tags sqlite_omit_load_extension -o $prod_bin ./cmd/fibe-distilled"]
+  SRC --> TEST["go test ./..."]
+  PROD --> P1["production routes only"]
+  P1 --> P2["/e2e_backdoor/* absent"]
+  P1 --> P3["no internal/e2e import · no fixture marker shim"]
+  E2E["fibe-distilled-e2e"] --> E1["e2e-proxy"]
+  E1 --> E2X["/e2e_backdoor/bootstrap + /operation"]
+  E1 --> E3["fixture_marker rewritten before forwarding"]
+  </pre>
+  <div class="callout warn"><b>Do not expose the e2e proxy outside local test networks.</b> It exists only so unchanged
+  SDK/Playwright bootstrap helpers can target fibe-distilled during docker-e2e.</div>
+</section>
+
+<!-- STATUS -->
+<section id="status">
+  <h2>Status &amp; known issues</h2>
+  <p class="sub">Post-remediation audit. The major prior findings are fixed on the real Marquee-attached path:
+  destructive lifecycle operations are host/instance-scoped, job-mode has been removed from scope, and drift repair
+  has persisted cooldown state. Public DNS / real Let's Encrypt issuance is still outside the default harness, and scoped
+  operational limitations are documented in <span class="mono">docs/LIMITATIONS.md</span>.</p>
+  <div class="statgrid">
+    <div class="stat"><div class="n g">✓</div><div class="l">scoped runtime findings remediated</div></div>
+    <div class="stat"><div class="n a">3</div><div class="l">documented scoped operational limitations</div></div>
+    <div class="stat"><div class="n a">1</div><div class="l">live-domain SSL smoke left outside docker-e2e</div></div>
+    <div class="stat"><div class="n b">✓</div><div class="l">build · vet · tests · docker-e2e green</div></div>
+  </div>
+
+  <h3>Fixed since the prior audit</h3>
+  <div class="callout ok">No in-binary e2e backdoor · job-mode/Tricks rejected at the compatibility gate · exclusive <span class="mono">/opt/fibe/playgrounds</span> root cleanup · repair cooldown + <span class="mono">needs_recreation</span> · service health from real inspect · real local builds with identity digests + reuse · Playguard reconcile loop · real stop/start/hard_restart · expiration enforced (dirty-skip) · single static API token · async runs in a goroutine + startup recovery · failed playgrounds retained · Traefik HTTP→HTTPS redirect · prop sync hits GitHub for real.</div>
+
+  <h3>Remediated audit items</h3>
+  <details class="issue" open><summary><span class="sev fixed">OK</span> #1 — Lifecycle cleanup is exclusive-root scoped</summary>
+    <div class="body"><div class="kv">the configured Marquee and /opt/fibe/playgrounds root are fibe-distilled managed</div>
+    Destructive operations validate the compose project/path before touching Compose, containers, networks, volumes, or
+    <span class="mono">/opt/fibe</span>. Playguard removes safe remote project directories absent from SQLite because the
+    configured Marquee is no longer shared with other owners.</div></details>
+  <details class="issue" open><summary><span class="sev fixed">OK</span> #2 — Job-mode/Tricks are removed from scope</summary>
+    <div class="body"><div class="kv">compatgate returns NOT_IMPLEMENTED for job-mode inputs</div>
+    Fibe-distilled no longer runs or simulates Tricks. <span class="mono">job_mode</span>, <span class="mono">fibe.gg/job_watch</span>,
+    run selectors, <span class="mono">result_status</span>, and <span class="mono">/api/tricks</span> fail fast.</div></details>
+  <details class="issue" open><summary><span class="sev fixed">OK</span> #6 — Image/artifact repair has cooldown metadata</summary>
+    <div class="body"><div class="kv">playguard_repair_reason · playguard_repair_lock_until · needs_recreation</div>
+    Runtime drift repair now persists a cooldown and exposes pending recreation in status payloads, preventing every-tick
+    redeploy loops while keeping the operator-visible state honest.</div></details>
+
+  <h3>Current accepted tradeoffs</h3>
+  <details class="issue"><summary><span class="sev med">MED</span> Container hardening is trusted-operator scope</summary>
+    <div class="body"><div class="kv">fibe-distilled validates supported Fibe labels and Compose shape, not container isolation</div>
+    <span class="mono">privileged</span>, <span class="mono">network_mode:host</span>, <span class="mono">pid:host</span>,
+    <span class="mono">/var/run/docker.sock</span>, and sensitive host bind mounts are accepted for Playgrounds authored
+    by the single trusted operator. Fibe-distilled must not be exposed as a multi-tenant untrusted-Compose service.</div></details>
+  <details class="issue"><summary><span class="sev med">MED</span> No full optimistic-lock/CAS layer on playground rows</summary>
+    <div class="body"><div class="kv">internal/storage · internal/worker/refresh.go · internal/playground/http.go</div>
+    SQLite uses one open connection, WAL, and <span class="mono">busy_timeout</span>; lifecycle handlers and Playguard
+    re-read rows at important boundaries. Broader simultaneous JSON-field conflicts remain best-effort under the
+    single-process runtime.</div></details>
+  <details class="issue"><summary><span class="sev low">LOW</span> Public DNS and ACME issuance are live-environment checks</summary>
+    <div class="body"><div class="kv">the default docker-e2e harness proves local HTTPS/SNI routing, not public HTTP-01 reachability</div>
+    Fibe-distilled always emits HTTPS/Let's Encrypt Traefik configuration for the configured Marquee. Operators still need
+    real DNS pointing at a publicly reachable host before browser-trusted certificates can be issued.</div></details>
+
+  <div class="callout"><b>Net verdict:</b> the minimal scoped server is correct and shippable for the stated
+  single-tenant, server-only scope. The external <span class="mono">fibe-distilled-e2e</span> default proves local HTTPS/SNI routing, owned <span class="mono">/opt/fibe</span>
+  artifacts, and exclusive-root lifecycle cleanup. Real public DNS and Let's Encrypt issuance remain the final live-domain smoke outside the default private
+  Docker harness.</div>
+</section>
+
+<footer>
+  <p>fibe-distilled interactive guide · current with the screenshot-audit remediation: code, unit tests, build-tag checks,
+  Docker-e2e harness behavior, Atlas, and docs/alloy were reviewed. Public DNS / real Let's Encrypt issuance is tracked
+  as a separate live-domain smoke.</p>
+</footer>
+</main>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({startOnLoad:true, theme:'dark', themeVariables:{
+    primaryColor:'#13283f', primaryTextColor:'#e6edf3', primaryBorderColor:'#1b4a73',
+    lineColor:'#4dabf7', secondaryColor:'#161d2b', tertiaryColor:'#0f1623',
+    fontFamily:'ui-monospace,Menlo,Consolas,monospace', fontSize:'13px'
+  }});
+</script>
+<script>
+  // copy buttons
+  document.querySelectorAll('pre.code .copy').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const pre=btn.closest('pre'); const t=pre.innerText.replace(/^copy\n?/,'');
+      navigator.clipboard.writeText(t.trim()).then(()=>{btn.textContent='copied';setTimeout(()=>btn.textContent='copy',1200);});
+    });
+  });
+  // matrix filter
+  const mitems=[...document.querySelectorAll('#matrix .mitem')];
+  document.querySelectorAll('.filterbar button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.filterbar button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); const f=b.dataset.f;
+      mitems.forEach(m=>m.style.display=(f==='all'||m.dataset.cat===f)?'':'none');
+    });
+  });
+  // flow tabs
+  document.querySelectorAll('#flowtabs button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('#flowtabs button').forEach(x=>x.classList.remove('on'));
+      document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('on'));
+      b.classList.add('on'); document.getElementById(b.dataset.t).classList.add('on');
+    });
+  });
+  // scrollspy
+  const links=[...document.querySelectorAll('nav.side a')];
+  const map={}; links.forEach(l=>{const id=l.getAttribute('href').slice(1); map[id]=l;});
+  const obs=new IntersectionObserver((es)=>{
+    es.forEach(e=>{ if(e.isIntersecting){ links.forEach(l=>l.classList.remove('active')); if(map[e.target.id]) map[e.target.id].classList.add('active'); }});
+  },{rootMargin:'-10% 0px -80% 0px',threshold:0});
+  document.querySelectorAll('section[id]').forEach(s=>obs.observe(s));
+  // expand everything for print / PDF export
+  function expandAll(){
+    document.querySelectorAll('details').forEach(d=>d.open=true);
+    document.querySelectorAll('.tabpane').forEach(p=>p.classList.add('on'));
+    document.querySelectorAll('#matrix .mitem').forEach(m=>m.style.display='');
+  }
+  window.addEventListener('beforeprint',expandAll);
+  if(location.search.includes('print'))expandAll();
+</script>
+</body>
+</html>

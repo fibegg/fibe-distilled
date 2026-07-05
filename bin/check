@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/.."
+
+for linter in bin/linters/*; do
+  [ -x "$linter" ] || continue
+  "$linter"
+done

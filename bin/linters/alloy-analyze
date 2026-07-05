@@ -1,0 +1,87 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+alloy_bin="$(command -v alloy || true)"
+if [ -z "$alloy_bin" ]; then
+  echo "Alloy is not present in PATH; skipping docs/alloy analysis."
+  exit 0
+fi
+
+if ! "$alloy_bin" version >/dev/null 2>&1; then
+  brew_java_home="/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home"
+  if [ -x "$brew_java_home/bin/java" ]; then
+    export JAVA_HOME="$brew_java_home"
+  fi
+fi
+
+if ! "$alloy_bin" version >/dev/null 2>&1; then
+  echo "Alloy is present but cannot start; install a Java runtime compatible with Alloy 6." >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to parse Alloy JSON receipts." >&2
+  exit 1
+fi
+
+output_root="${TMPDIR:-/tmp}/fibe-distilled-alloy-$$"
+mkdir -p "$output_root"
+trap 'rm -rf "$output_root"' EXIT
+
+files=0
+commands=0
+
+for file in $(find docs/alloy -type f -name '*.als' | sort); do
+  if ! grep -Eq '^[[:space:]]*(run|check)[[:space:]]+[[:alnum:]_]' "$file"; then
+    continue
+  fi
+
+  safe_name="$(printf '%s' "$file" | sed 's#[/.]#_#g')"
+  output_dir="$output_root/$safe_name"
+  if ! exec_output="$("$alloy_bin" exec -q -f -t json -o "$output_dir" -c '*' "$file" 2>&1)"; then
+    echo "$file failed during Alloy execution:" >&2
+    echo "$exec_output" >&2
+    exit 1
+  fi
+
+  count="$(python3 - "$output_dir/receipt.json" "$file" <<'PY'
+import json
+import sys
+
+receipt_path, source = sys.argv[1], sys.argv[2]
+with open(receipt_path, "r", encoding="utf-8") as handle:
+    commands = json.load(handle)["commands"]
+
+failures = []
+for name, command in commands.items():
+    kind = command["type"]
+    solution = command.get("solution")
+    has_solution = isinstance(solution, list) and len(solution) > 0
+    if kind == "run" and not has_solution:
+        failures.append(f"{name}: expected SAT, got UNSAT")
+    elif kind == "check" and has_solution:
+        failures.append(f"{name}: expected UNSAT, got SAT")
+    elif kind not in ("run", "check"):
+        failures.append(f"{name}: unexpected command type {kind!r}")
+
+if failures:
+    print(f"{source}: Alloy expectation mismatch", file=sys.stderr)
+    for failure in failures:
+        print(f"  {failure}", file=sys.stderr)
+    sys.exit(1)
+
+print(len(commands))
+PY
+)"
+  commands=$((commands + count))
+  files=$((files + 1))
+done
+
+if [ "$files" -eq 0 ]; then
+  echo "No Alloy command files found under docs/alloy." >&2
+  exit 1
+fi
+
+echo "Alloy analysis passed: $files files, $commands commands."

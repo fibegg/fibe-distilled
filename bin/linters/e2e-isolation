@@ -1,0 +1,41 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+prod_files="$(go list -f '{{range .GoFiles}}{{println .}}{{end}}' ./internal/api)"
+if printf '%s\n' "$prod_files" | grep -q '^e2e_'; then
+  printf 'e2e api files are present in production build:\n%s\n' "$prod_files" >&2
+  exit 1
+fi
+
+e2e_files="$(find internal \( -name '*e2e*' -o -name '*fixture_marker*' \) -print)"
+if [ -n "$e2e_files" ]; then
+  printf 'fibe-distilled should not contain e2e hook or fixture-marker source files:\n%s\n' "$e2e_files" >&2
+  exit 1
+fi
+
+if go list ./internal/e2e >/dev/null 2>&1 || go list -tags=e2e ./internal/e2e >/dev/null 2>&1; then
+  printf 'internal/e2e should not exist in fibe-distilled; e2e orchestration belongs to fibe-distilled-e2e\n' >&2
+  exit 1
+fi
+
+prod_deps="$(go list -tags=e2e -deps -f '{{.ImportPath}}' ./cmd/fibe-distilled)"
+if printf '%s\n' "$prod_deps" | grep -q '^github.com/fibegg/fibe-distilled/internal/e2e$'; then
+  printf 'fibe-distilled imports internal/e2e under -tags=e2e\n' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_deps" | grep -q '^github.com/fibegg/fibe-distilled/internal/runtimetest$'; then
+  printf 'production binary imports internal/runtimetest\n' >&2
+  exit 1
+fi
+
+prod_bin="$(mktemp)"
+trap 'rm -f "$prod_bin"' EXIT
+go build -tags sqlite_omit_load_extension -o "$prod_bin" ./cmd/fibe-distilled
+for forbidden in '/e2e_backdoor/' 'fixture_marker' 'internal/e2e' 'docker-compose.e2e.yml'; do
+  if strings "$prod_bin" | grep -q "$forbidden"; then
+    printf 'production binary contains forbidden e2e/test shim string: %s\n' "$forbidden" >&2
+    exit 1
+  fi
+done

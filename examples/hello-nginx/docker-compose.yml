@@ -1,0 +1,6 @@
+services:
+  web:
+    image: nginx:alpine
+    labels:
+      fibe.gg/port: "80"
+      fibe.gg/subdomain: hello

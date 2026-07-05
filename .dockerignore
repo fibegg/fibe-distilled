@@ -1,0 +1,6 @@
+.git
+data
+fibe-distilled
+*.sqlite3
+*.sqlite3-*
+test-results

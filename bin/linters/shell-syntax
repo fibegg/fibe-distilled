@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+for script in bin/check bin/linters/*; do
+  [ -f "$script" ] || continue
+  sh -n "$script"
+done

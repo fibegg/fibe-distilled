@@ -1,0 +1,58 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+matches="$(rg -in 'browser|gitea|agent' cmd internal Dockerfile --glob '!**/*_test.go' || true)"
+matches="$(printf '%s\n' "$matches" | grep -v 'User-Agent' || true)"
+matches="$(printf '%s\n' "$matches" | grep -vi 'crypto/ssh/agent' || true)"
+matches="$(printf '%s\n' "$matches" | grep -vi 'ssh agent' || true)"
+matches="$(printf '%s\n' "$matches" | grep -vi 'agent.NewClient' || true)"
+matches="$(printf '%s\n' "$matches" | rg -v '^internal/compatgate/(helpers|registry)\.go:' || true)"
+if [ -n "$matches" ]; then
+  printf '%s\n' "$matches" >&2
+  printf 'forbidden runtime scope term found\n' >&2
+  exit 1
+fi
+
+github_content_hits="$(rg -n 'GetContents|GetContent|DownloadContents|RepositoryContent|ContentFile|ContentDirectory|RawContent|EncodedContent|Repositories\.(GetContents|DownloadContents)|/contents|raw\.githubusercontent\.com|githubusercontent\.com|codeload\.github\.com|archive/refs' cmd internal --glob '!**/*_test.go' || true)"
+if [ -n "$github_content_hits" ]; then
+  printf 'GitHub contents/env-file fetching is outside fibe-distilled scope:\n%s\n' "$github_content_hits" >&2
+  exit 1
+fi
+
+env_default_hits="$(rg -n 'fetchGitHubEnvDefaults|parseEnvDefaults|envDefaults|envDefaultValues|envFiles|envFileErrors|envFileDefaults|EnvDefaults|EnvDefault|EnvFiles|EnvFileErrors|EnvFileDefaults|env_defaults_json|env_file_errors|env_defaults|env_file_defaults|dotenv|godotenv|\.env\.(example|sample|template)' cmd internal --glob '!**/*_test.go' || true)"
+if [ -n "$env_default_hits" ]; then
+  disallowed_env_default_hits="$(printf '%s\n' "$env_default_hits" | rg -v '^internal/compatgate/registry\.go:' || true)"
+  if [ -n "$disallowed_env_default_hits" ]; then
+    printf 'env-default support may only exist as explicit NOT_IMPLEMENTED routing:\n%s\n' "$disallowed_env_default_hits" >&2
+    exit 1
+  fi
+fi
+
+env_file_surface_hits="$(rg -n 'env_file_path|fibe\.gg/env_file|\benv_file\b' cmd internal --glob '!**/*_test.go' || true)"
+if [ -n "$env_file_surface_hits" ]; then
+  disallowed_env_file_surface_hits="$(printf '%s\n' "$env_file_surface_hits" | rg -v '^internal/(compatgate/(compose_payload|strict)\.go|composefile/service/(labels|labels_validation)\.go):' || true)"
+  if [ -n "$disallowed_env_file_surface_hits" ]; then
+    printf 'env-file default resolution fields may only exist as explicit unsupported-surface rejections:\n%s\n' "$disallowed_env_file_surface_hits" >&2
+    exit 1
+  fi
+fi
+
+repo_config_launch_hits="$(rg -n 'config_path|github_ref|fetch.*compose|compose.*config.*ref' cmd internal --glob '!**/*_test.go' || true)"
+if [ -n "$repo_config_launch_hits" ]; then
+  disallowed_repo_config_launch_hits="$(printf '%s\n' "$repo_config_launch_hits" | rg -v '^internal/compatgate/(payload_checks|strict)\.go:' || true)"
+  if [ -n "$disallowed_repo_config_launch_hits" ]; then
+    printf 'repository config-ref Compose launch may only exist as explicit NOT_IMPLEMENTED compatgate rejection:\n%s\n' "$disallowed_repo_config_launch_hits" >&2
+    exit 1
+  fi
+fi
+
+job_mode_hits="$(rg -n 'JobResult|job_result|job_results|job_mode|job_watch|target_type|result_status|only_services|except_services|services\._run|/api/tricks|\btricks\b|"_run"' cmd internal --glob '!**/*_test.go' || true)"
+if [ -n "$job_mode_hits" ]; then
+  disallowed_job_mode_hits="$(printf '%s\n' "$job_mode_hits" | rg -v '^internal/(compatgate/(compose_payload|payload_checks|registry|strict)\.go|composefile/(parse)\.go|composefile/service/(labels|service_override_validation)\.go|playground/creation\.go|playspec/services\.go):' || true)"
+  if [ -n "$disallowed_job_mode_hits" ]; then
+    printf 'job-mode and JobResult code may only exist as explicit NOT_IMPLEMENTED compatgate rejection:\n%s\n' "$disallowed_job_mode_hits" >&2
+    exit 1
+  fi
+fi

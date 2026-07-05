@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+unformatted="$(gofmt -l $(find . -name '*.go' -not -path './.git/*'))"
+if [ -n "$unformatted" ]; then
+  printf 'gofmt needed:\n%s\n' "$unformatted" >&2
+  exit 1
+fi
+
+cover_profile="${FIBEDISTILLED_COVERPROFILE:-}"
+cleanup_cover_profile=0
+if [ -z "$cover_profile" ]; then
+  cover_profile="$(mktemp)"
+  cleanup_cover_profile=1
+fi
+
+prod_bin="$(mktemp)"
+cleanup() {
+  rm -f "$prod_bin"
+  if [ "$cleanup_cover_profile" -eq 1 ]; then
+    rm -f "$cover_profile"
+  fi
+}
+trap cleanup EXIT
+
+go test -race -coverprofile="$cover_profile" -coverpkg=./... ./...
+coverage_total="$(go tool cover -func="$cover_profile" | tail -n 1)"
+printf '%s\n' "$coverage_total"
+coverage_percent="$(printf '%s\n' "$coverage_total" | awk '{gsub(/%/, "", $3); print $3}')"
+min_coverage="${FIBEDISTILLED_COVERAGE_MIN:-70.0}"
+if ! awk -v got="$coverage_percent" -v min="$min_coverage" 'BEGIN { exit !(got + 0 >= min + 0) }'; then
+  printf 'coverage %.1f%% is below required %.1f%%\n' "$coverage_percent" "$min_coverage" >&2
+  exit 1
+fi
+go vet ./...
+
+go build -tags sqlite_omit_load_extension -o "$prod_bin" ./cmd/fibe-distilled

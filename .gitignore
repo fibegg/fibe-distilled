@@ -1,0 +1,20 @@
+# Local runtime data
+data/
+*.sqlite3
+*.sqlite3-*
+
+# Built binaries (anchored so the cmd/fibe-distilled source dir is NOT ignored)
+/fibe-distilled
+/bin/fibe-distilled
+/out/
+
+# Local Go build/test artifacts
+*.o
+*.test
+coverage.out
+*.prof
+
+# OS / editor / language caches
+.DS_Store
+__pycache__/
+*.pyc

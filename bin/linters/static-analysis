@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+go tool -modfile=tools.mod golangci-lint run
+go tool -modfile=tools.mod golangci-lint run --tests=false --enable=bodyclose --enable=noctx --enable=contextcheck --enable=forcetypeassert --enable=unqueryvet --enable=canonicalheader --enable=containedctx --enable=errname --enable=exhaustive --enable=errchkjson --enable=rowserrcheck --enable=gosec --enable=nilnesserr --enable=durationcheck --enable=copyloopvar --enable=makezero --enable=sloglint
+go tool -modfile=tools.mod golangci-lint run --tests=false --enable=modernize --enable=exptostd --enable=usestdlibvars --enable=mirror --enable=predeclared --enable=prealloc --enable=gocritic --enable=revive --enable=dupword --enable=misspell
+go tool -modfile=tools.mod errcheck ./...
+
+govuln_json="$(mktemp)"
+govuln_allowed="$(mktemp)"
+trap 'rm -f "$govuln_json" "$govuln_allowed"' EXIT
+
+go tool -modfile=tools.mod govulncheck -format=json ./... > "$govuln_json"
+cat > "$govuln_allowed" <<'EOF'
+# Docker CLI v29 fixes GO-2026-4610, but Compose v2.40.3 still requires
+# Docker CLI v28-compatible client types. Revisit when Compose updates.
+GO-2026-4610
+# BuildKit v0.28.1 fixes GO-2026-4858/4859, but it requires
+# github.com/moby/go-archive v0.2.0, which breaks Docker CLI v28.5.x.
+GO-2026-4858
+GO-2026-4859
+# The Docker Engine SDK advisories below do not currently publish fixed
+# github.com/docker/docker module versions. fibe-distilled uses the SDK only against
+# the operator-configured Marquee Docker daemon.
+GO-2026-4883
+GO-2026-4887
+GO-2026-5617
+GO-2026-5668
+GO-2026-5746
+EOF
+
+govuln_findings="$(jq -r 'select(.finding) | .finding.osv' "$govuln_json" | sort -u)"
+govuln_unexpected="$(printf '%s\n' "$govuln_findings" | sed '/^$/d' | grep -vxF -f "$govuln_allowed" || true)"
+if [ -n "$govuln_unexpected" ]; then
+  printf 'unexpected govulncheck findings:\n%s\n' "$govuln_unexpected" >&2
+  go tool -modfile=tools.mod govulncheck ./...
+  exit 1
+fi
+if [ -n "$govuln_findings" ]; then
+  printf 'govulncheck findings are limited to documented Docker compatibility allowlist:\n%s\n' "$govuln_findings" >&2
+fi

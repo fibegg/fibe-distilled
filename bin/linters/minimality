@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/../.."
+
+production_go_files="$(find internal cmd tools -name '*.go' ! -name '*_test.go' | sort)"
+
+go tool -modfile=tools.mod deadcode -test ./...
+go tool -modfile=tools.mod unparam ./...
+go tool -modfile=tools.mod ineffassign ./...
+go tool -modfile=tools.mod gocognit -over 9 $production_go_files
+go tool -modfile=tools.mod gocyclo -over 9 $production_go_files
+go tool -modfile=tools.mod dupl -t 70 internal cmd tools
