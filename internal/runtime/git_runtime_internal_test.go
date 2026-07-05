@@ -57,7 +57,7 @@ func TestUpdateGitCheckoutPreservesIgnoredRuntimeFiles(t *testing.T) {
 	writeFile(t, filepath.Join(remote, "app.txt"), "new\n")
 	commitAll(t, repo, "update")
 
-	if err := updateGitCheckout(checkout, GitSyncRequest{RepoURL: remote, Branch: "master"}); err != nil {
+	if err := updateGitCheckout(context.Background(), checkout, GitSyncRequest{RepoURL: remote, Branch: "master"}); err != nil {
 		t.Fatalf("update checkout: %v", err)
 	}
 	if got, err := os.ReadFile(filepath.Join(checkout, "app.txt")); err != nil || string(got) != "new\n" {

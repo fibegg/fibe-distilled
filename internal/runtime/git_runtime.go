@@ -2,13 +2,16 @@ package runtime
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/fibegg/fibe-distilled/internal/domain"
@@ -94,7 +97,7 @@ func (r GoGitRuntime) Sync(ctx context.Context, marquee domain.Marquee, req GitS
 		return GitSyncError{Category: "checkout_failed", Message: "fibe_distilled_source_sync_category=checkout_failed", Err: errors.New("source path exists without .git")}
 	}
 	if gitExists {
-		return updateGitCheckout(prepared.TargetPath.String(), prepared)
+		return updateGitCheckout(ctx, prepared.TargetPath.String(), prepared)
 	}
 	local, err := os.MkdirTemp("", "fibe-distilled-source-*")
 	if err != nil {
@@ -227,6 +230,9 @@ func (r GoGitRuntime) stagedCheckoutDirty(ctx context.Context, marquee domain.Ma
 	if err := downloadRemoteDir(ctx, r.fs(), marquee, sourcePath, local); err != nil {
 		return true, err
 	}
+	if clean, ok, err := cleanGitWorktreeWithCLI(ctx, local); ok {
+		return !clean, err
+	}
 	repo, err := git.PlainOpen(local)
 	if err != nil {
 		return true, err
@@ -255,7 +261,15 @@ func cloneGitCheckout(local string, req GitSyncRequest) error {
 }
 
 // updateGitCheckout validates and updates an existing checkout in place.
-func updateGitCheckout(local string, req GitSyncRequest) error {
+func updateGitCheckout(ctx context.Context, local string, req GitSyncRequest) error {
+	if err, ok := updateGitCheckoutWithCLI(ctx, local, req); ok {
+		return err
+	}
+	return updateGitCheckoutWithGoGit(local, req)
+}
+
+// updateGitCheckoutWithGoGit updates a checkout through go-git.
+func updateGitCheckoutWithGoGit(local string, req GitSyncRequest) error {
 	repo, err := git.PlainOpen(local)
 	if err != nil {
 		return classifyGoGitError(err)
@@ -271,6 +285,134 @@ func updateGitCheckout(local string, req GitSyncRequest) error {
 		return err
 	}
 	return syncGitBranch(repo, wt, req)
+}
+
+// updateGitCheckoutWithCLI updates a checkout through native Git when available.
+func updateGitCheckoutWithCLI(ctx context.Context, local string, req GitSyncRequest) (error, bool) {
+	if !gitCLIAvailable() {
+		return nil, false
+	}
+	clean, _, err := cleanGitWorktreeWithCLI(ctx, local)
+	if err != nil {
+		return err, true
+	}
+	if !clean {
+		return GitSyncError{Category: "dirty_work", Message: "fibe_distilled_source_sync_category=dirty_work"}, true
+	}
+	if err := runGitCLI(ctx, local, req, false, "remote", "set-url", "origin", gitRemoteURL(req.RepoURL)); err != nil {
+		return classifyGoGitError(err), true
+	}
+	if err := runGitCLI(ctx, local, req, true, "fetch", "--all", "--prune"); err != nil {
+		return classifyGoGitError(err), true
+	}
+	upstream := "origin/" + req.Branch
+	if err := runGitCLI(ctx, local, req, false, "rev-parse", "--verify", upstream); err != nil {
+		return GitSyncError{Category: "missing_upstream", Message: "fibe_distilled_source_sync_category=missing_upstream", Err: err}, true
+	}
+	if err := runGitCLI(ctx, local, req, false, "checkout", req.Branch); err != nil {
+		if createErr := runGitCLI(ctx, local, req, false, "checkout", "-b", req.Branch, upstream); createErr != nil {
+			return GitSyncError{Category: "checkout_failed", Message: "fibe_distilled_source_sync_category=checkout_failed", Err: errors.Join(err, createErr)}, true
+		}
+	}
+	relation, err := gitCLIBranchRelation(ctx, local, req, upstream)
+	if err != nil {
+		return err, true
+	}
+	switch relation {
+	case "ahead":
+		return GitSyncError{Category: "ahead", Message: "fibe_distilled_source_sync_category=ahead"}, true
+	case "diverged":
+		return GitSyncError{Category: "diverged", Message: "fibe_distilled_source_sync_category=diverged"}, true
+	}
+	if err := runGitCLI(ctx, local, req, true, "pull", "--ff-only", "origin", req.Branch); err != nil {
+		return classifyGoGitError(err), true
+	}
+	return nil, true
+}
+
+// cleanGitWorktreeWithCLI reports native Git cleanliness when git is available.
+func cleanGitWorktreeWithCLI(ctx context.Context, local string) (bool, bool, error) {
+	if !gitCLIAvailable() {
+		return false, false, nil
+	}
+	output, err := runGitCLIOutput(ctx, local, GitSyncRequest{}, false, "status", "--porcelain=v1", "--untracked-files=all")
+	if err != nil {
+		return false, true, classifyGoGitError(err)
+	}
+	return strings.TrimSpace(output) == "", true, nil
+}
+
+// gitCLIBranchRelation classifies local/upstream history through native Git.
+func gitCLIBranchRelation(ctx context.Context, local string, req GitSyncRequest, upstream string) (string, error) {
+	output, err := runGitCLIOutput(ctx, local, req, false, "rev-list", "--left-right", "--count", "HEAD..."+upstream)
+	if err != nil {
+		return "", GitSyncError{Category: "history_unverifiable", Message: "fibe_distilled_source_sync_category=history_unverifiable", Err: err}
+	}
+	fields := strings.Fields(strings.TrimSpace(output))
+	if len(fields) != 2 {
+		return "", GitSyncError{Category: "history_unverifiable", Message: "fibe_distilled_source_sync_category=history_unverifiable", Err: errors.New("unexpected rev-list count output")}
+	}
+	ahead, aheadErr := strconv.ParseUint(fields[0], 10, 64)
+	behind, behindErr := strconv.ParseUint(fields[1], 10, 64)
+	if aheadErr != nil || behindErr != nil {
+		return "", GitSyncError{Category: "history_unverifiable", Message: "fibe_distilled_source_sync_category=history_unverifiable", Err: errors.Join(aheadErr, behindErr)}
+	}
+	switch {
+	case ahead > 0 && behind > 0:
+		return "diverged", nil
+	case ahead > 0:
+		return "ahead", nil
+	default:
+		return "ok", nil
+	}
+}
+
+// gitCLIAvailable reports whether native Git can handle local checkout state.
+func gitCLIAvailable() bool {
+	_, err := exec.LookPath("git")
+	return err == nil
+}
+
+// runGitCLI executes native Git and discards stdout on success.
+func runGitCLI(ctx context.Context, local string, req GitSyncRequest, withAuth bool, args ...string) error {
+	_, err := runGitCLIOutput(ctx, local, req, withAuth, args...)
+	return err
+}
+
+// runGitCLIOutput executes native Git and returns stdout.
+func runGitCLIOutput(ctx context.Context, local string, req GitSyncRequest, withAuth bool, args ...string) (string, error) {
+	gitArgs := make([]string, 0, len(args)+4)
+	if withAuth {
+		if header := gitAuthHeader(req.RepoURL, req.GitHubToken); header != "" {
+			gitArgs = append(gitArgs, "-c", "http.extraHeader="+header)
+		}
+	}
+	gitArgs = append(gitArgs, "-C", local)
+	gitArgs = append(gitArgs, args...)
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		action := "command"
+		if len(args) > 0 {
+			action = args[0]
+		}
+		return "", fmt.Errorf("git %s failed: %w: %s", action, err, strings.TrimSpace(string(output)))
+	}
+	return string(output), nil
+}
+
+// gitAuthHeader returns the transient GitHub auth header for native Git.
+func gitAuthHeader(repoURL string, token string) string {
+	if !isGitHubHTTPSURL(repoURL) {
+		return ""
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+	return "Authorization: Basic " + encoded
 }
 
 // syncGitBranch checks out, validates, and pulls the requested branch.
