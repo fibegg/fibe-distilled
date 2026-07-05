@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -187,6 +188,59 @@ func TestRefreshDoesNotOverwriteSupersededLifecycleStatus(t *testing.T) {
 	}
 	if persisted.Status != domain.StatusStopped {
 		t.Fatalf("refresh must not overwrite stopped with stale running observation, got %#v", persisted)
+	}
+}
+
+func TestRefreshDoesNotPromoteRunningUntilNoHealthcheckRouteIsReady(t *testing.T) {
+	ctx, st := openWorkerTestStore(t)
+	fake := &runtimetest.FakeExecutor{
+		ResultContains: map[string]runtime.CommandResult{
+			"FIBE_DISTILLED_INSPECT": {Stdout: `[{"Service":"web","Image":"nginx:alpine","State":"running","Health":"","ExitCode":0}]`},
+		},
+	}
+	probe := &sequenceRouteProbeClient{statuses: []int{http.StatusBadGateway, http.StatusOK}}
+	w := Worker{DB: st, Runtime: runtime.Checker{Executor: fake}, RouteProbeClient: probe}
+	mq, err := createTestRuntimeMarquee(t, ctx, st, domain.Marquee{Name: "route-refresh-marquee", Host: "127.0.0.1", User: "root", Port: 22, SSHPrivateKey: "test", Status: "active"})
+	if err != nil {
+		t.Fatalf("create marquee: %v", err)
+	}
+	project := "route-refresh--1"
+	pg, err := st.CreatePlayground(ctx, domain.Playground{
+		Name:           "route-refresh-pg",
+		Status:         domain.StatusStopped,
+		MarqueeID:      &mq.ID,
+		ComposeProject: &project,
+		Services:       []domain.PlaygroundServiceInfo{{Name: "web", Image: "nginx:alpine", Status: "stopped"}},
+		ServiceURLs:    []domain.PlaygroundServiceURL{{Name: "web", URL: "https://route-refresh.example.test"}},
+	})
+	if err != nil {
+		t.Fatalf("create playground: %v", err)
+	}
+
+	status, err := w.RefreshPlayground(ctx, pg)
+	if err != nil {
+		t.Fatalf("refresh first pass: %v", err)
+	}
+	if status.Status != domain.StatusStopped {
+		t.Fatalf("502 route should not promote stopped row to running, got %#v", status)
+	}
+	persisted, err := st.GetPlayground(ctx, "route-refresh-pg")
+	if err != nil {
+		t.Fatalf("get persisted playground: %v", err)
+	}
+	if persisted.Status != domain.StatusStopped {
+		t.Fatalf("expected persisted stopped status before route recovery, got %#v", persisted)
+	}
+
+	status, err = w.RefreshPlayground(ctx, persisted)
+	if err != nil {
+		t.Fatalf("refresh recovered route: %v", err)
+	}
+	if status.Status != domain.StatusRunning {
+		t.Fatalf("healthy route should promote running service, got %#v", status)
+	}
+	if probe.calls < 2 {
+		t.Fatalf("expected refresh to probe route on both passes, calls=%d", probe.calls)
 	}
 }
 

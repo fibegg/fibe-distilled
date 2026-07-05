@@ -30,7 +30,8 @@ func (w Worker) applyRuntimeServiceObservation(ctx context.Context, pg domain.Pl
 		result.Done = true
 		return result, err
 	}
-	saved, active, err := w.saveObservedRuntimeServices(ctx, pg, services, refreshStatus)
+	routedReady := len(pg.ServiceURLs) == 0 || w.routedServicesReady(ctx, services, pg.ServiceURLs)
+	saved, active, err := w.saveObservedRuntimeServices(ctx, pg, services, refreshStatus, routedReady)
 	result.Playground = saved
 	result.Status = statusFromPlayground(saved)
 	if err != nil || !active {
@@ -42,7 +43,7 @@ func (w Worker) applyRuntimeServiceObservation(ctx context.Context, pg domain.Pl
 }
 
 // saveObservedRuntimeServices stores runtime state observed from Docker Compose.
-func (w Worker) saveObservedRuntimeServices(ctx context.Context, pg domain.Playground, services []domain.PlaygroundServiceInfo, refreshStatus string) (domain.Playground, bool, error) {
+func (w Worker) saveObservedRuntimeServices(ctx context.Context, pg domain.Playground, services []domain.PlaygroundServiceInfo, refreshStatus string, routedReady bool) (domain.Playground, bool, error) {
 	current, active, err := w.currentRefreshPlayground(ctx, pg, refreshStatus)
 	if err != nil || !active {
 		return current, active, err
@@ -50,7 +51,7 @@ func (w Worker) saveObservedRuntimeServices(ctx context.Context, pg domain.Playg
 	pg = current
 	pg.Services = mergeServiceImages(pg.Services, services)
 	pg.ServiceURLs = mergeServiceURLState(pg.ServiceURLs, pg.Services)
-	pg = applyObservedRuntimeStatus(pg, services)
+	pg = applyObservedRuntimeStatus(pg, services, routedReady)
 	pg, err = w.preserveLatestRuntimeFields(ctx, pg)
 	if err != nil {
 		return pg, true, err
@@ -63,8 +64,11 @@ func (w Worker) saveObservedRuntimeServices(ctx context.Context, pg domain.Playg
 }
 
 // applyObservedRuntimeStatus maps service observations onto Playground status.
-func applyObservedRuntimeStatus(pg domain.Playground, services []domain.PlaygroundServiceInfo) domain.Playground {
+func applyObservedRuntimeStatus(pg domain.Playground, services []domain.PlaygroundServiceInfo, routedReady bool) domain.Playground {
 	if anyServiceRunning(services) {
+		if !routedReady {
+			return pg
+		}
 		pg.Status = domain.StatusRunning
 		return clearObservedRuntimeError(pg)
 	}
