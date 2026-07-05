@@ -86,15 +86,15 @@ func clearObservedRuntimeError(pg domain.Playground) domain.Playground {
 // observeRuntimeServices inspects services and waits for routed services when needed.
 func (w Worker) observeRuntimeServices(ctx context.Context, mq domain.Marquee, project string, pg domain.Playground) ([]domain.PlaygroundServiceInfo, error) {
 	observed, err := w.Runtime.InspectServices(ctx, mq, project)
-	if err != nil || runtimeServicesObservationComplete(pg, observed) {
+	if err != nil || w.runtimeServicesObservationComplete(ctx, pg, observed) {
 		return observed, err
 	}
 	return w.waitForRoutedServicesReady(ctx, mq, project, pg.ServiceURLs, observed)
 }
 
 // runtimeServicesObservationComplete reports whether service URL state is settled.
-func runtimeServicesObservationComplete(pg domain.Playground, observed []domain.PlaygroundServiceInfo) bool {
-	return len(pg.ServiceURLs) == 0 || routedServicesReady(observed, pg.ServiceURLs)
+func (w Worker) runtimeServicesObservationComplete(ctx context.Context, pg domain.Playground, observed []domain.PlaygroundServiceInfo) bool {
+	return len(pg.ServiceURLs) == 0 || w.routedServicesReady(ctx, observed, pg.ServiceURLs)
 }
 
 // waitForRoutedServicesReady polls Compose until routed services are usable.
@@ -144,14 +144,14 @@ func (w Worker) routedServicesPollTick(ctx context.Context, mq domain.Marquee, p
 	if err != nil {
 		return observed, true, err
 	}
-	return observed, routedServicesReady(observed, urls), nil
+	return observed, w.routedServicesReady(ctx, observed, urls), nil
 }
 
 // routedServicesReady checks that every public service is running and healthy.
-func routedServicesReady(services []domain.PlaygroundServiceInfo, urls []domain.PlaygroundServiceURL) bool {
+func (w Worker) routedServicesReady(ctx context.Context, services []domain.PlaygroundServiceInfo, urls []domain.PlaygroundServiceURL) bool {
 	byName := playgroundServicesByName(services)
 	for _, url := range urls {
-		if !routedServiceReady(byName, url.Name) {
+		if !w.routedServiceReady(ctx, byName, url) {
 			return false
 		}
 	}
@@ -167,10 +167,19 @@ func playgroundServicesByName(services []domain.PlaygroundServiceInfo) map[strin
 	return byName
 }
 
-// routedServiceReady checks the running and health state for one routed service.
-func routedServiceReady(services map[string]domain.PlaygroundServiceInfo, name string) bool {
-	service, ok := services[name]
-	return ok && serviceRunning(service) && serviceHealthReady(service.Health)
+// routedServiceReady checks the running, health, and route state for one public service.
+func (w Worker) routedServiceReady(ctx context.Context, services map[string]domain.PlaygroundServiceInfo, url domain.PlaygroundServiceURL) bool {
+	service, ok := services[url.Name]
+	if !ok || !serviceRunning(service) {
+		return false
+	}
+	if serviceHealthExplicitlyReady(service.Health) {
+		return true
+	}
+	if strings.TrimSpace(service.Health) != "" {
+		return false
+	}
+	return w.routeProbeReady(ctx, url.URL)
 }
 
 // serviceRunning reports whether Compose sees a live service container.
@@ -178,10 +187,10 @@ func serviceRunning(service domain.PlaygroundServiceInfo) bool {
 	return service.Running && normalizedServiceState(service.Status) == "running"
 }
 
-// serviceHealthReady accepts no healthcheck, Compose running, or healthy states.
-func serviceHealthReady(health string) bool {
+// serviceHealthExplicitlyReady accepts concrete ready health values from Docker.
+func serviceHealthExplicitlyReady(health string) bool {
 	switch normalizedServiceState(health) {
-	case "", "running", "healthy":
+	case "running", "healthy":
 		return true
 	default:
 		return false

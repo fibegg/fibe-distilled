@@ -1,11 +1,18 @@
 package worker
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/fibegg/fibe-distilled/internal/runtime"
 	store "github.com/fibegg/fibe-distilled/internal/storage"
 )
+
+// HTTPDoer is the small HTTP client boundary used for routed readiness probes.
+type HTTPDoer interface {
+	// Do executes one HTTP request.
+	Do(*http.Request) (*http.Response, error)
+}
 
 // Worker owns asynchronous fibe-distilled operations and runtime reconciliation.
 type Worker struct {
@@ -19,6 +26,8 @@ type Worker struct {
 	RuntimeObserveTimeout time.Duration
 	// RuntimeObserveInterval is the polling cadence during observation.
 	RuntimeObserveInterval time.Duration
+	// RouteProbeClient checks public routed service readiness when Docker has no health signal.
+	RouteProbeClient HTTPDoer
 }
 
 // defaultBuildStaleTimeout is how long a duplicate deploy waits for an in-flight build.

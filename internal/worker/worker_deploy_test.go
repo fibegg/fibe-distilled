@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -705,6 +707,67 @@ func TestStartRuntimePlaygroundWaitsForRoutedServicesToBecomeHealthy(t *testing.
 	if persisted.Status != domain.StatusRunning || len(persisted.ServiceURLs) != 1 || persisted.ServiceURLs[0].Running == nil || !*persisted.ServiceURLs[0].Running || persisted.ServiceURLs[0].Health != "healthy" {
 		t.Fatalf("expected persisted healthy routed service, got %#v", persisted)
 	}
+}
+
+func TestStartRuntimePlaygroundProbesRouteWhenServiceHasNoHealthcheck(t *testing.T) {
+	ctx, st := openWorkerTestStore(t)
+	project := "start-route-probe--1"
+	fake := &runtimetest.FakeExecutor{
+		ResultContains: map[string]runtime.CommandResult{
+			"FIBE_DISTILLED_INSPECT": {Stdout: `[{"Service":"web","Image":"alpine","State":"running","Health":"","ExitCode":0}]`},
+		},
+	}
+	probe := &sequenceRouteProbeClient{statuses: []int{http.StatusBadGateway, http.StatusOK}}
+	w := Worker{
+		DB:                     st,
+		Runtime:                runtime.Checker{Executor: fake},
+		RuntimeObserveTimeout:  100 * time.Millisecond,
+		RuntimeObserveInterval: time.Millisecond,
+		RouteProbeClient:       probe,
+	}
+	mq, err := createTestRuntimeMarquee(t, ctx, st, domain.Marquee{Name: "local", Host: "127.0.0.1", User: "root", Port: 22, SSHPrivateKey: "test", Status: "active"})
+	if err != nil {
+		t.Fatalf("create marquee: %v", err)
+	}
+	pg, err := st.CreatePlayground(ctx, domain.Playground{
+		Name:           "start-route-probe-pg",
+		Status:         domain.StatusStopped,
+		MarqueeID:      &mq.ID,
+		ComposeProject: &project,
+		Services:       []domain.PlaygroundServiceInfo{{Name: "web", Status: "stopped"}},
+		ServiceURLs:    []domain.PlaygroundServiceURL{{Name: "web", URL: "https://start.example.test"}},
+	})
+	if err != nil {
+		t.Fatalf("create playground: %v", err)
+	}
+
+	updated, err := w.StartRuntimePlayground(ctx, pg, &mq)
+	if err != nil {
+		t.Fatalf("start runtime playground: %v", err)
+	}
+	if updated.Status != domain.StatusRunning {
+		t.Fatalf("expected running playground, got %#v", updated)
+	}
+	if probe.calls < 2 {
+		t.Fatalf("expected route probe to retry through 502, calls=%d", probe.calls)
+	}
+}
+
+type sequenceRouteProbeClient struct {
+	statuses []int
+	calls    int
+}
+
+func (c *sequenceRouteProbeClient) Do(*http.Request) (*http.Response, error) {
+	status := http.StatusOK
+	if c.calls < len(c.statuses) {
+		status = c.statuses[c.calls]
+	}
+	c.calls++
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
 }
 
 func TestDeployPlaygroundRecordsFailedCreationStep(t *testing.T) {
