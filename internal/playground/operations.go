@@ -117,12 +117,8 @@ func playgroundOperationCanUseRuntimeOnly(action string, pg domain.Playground) b
 // playgroundOperationShouldEnqueue reports whether an action may run a full deploy.
 func playgroundOperationShouldEnqueue(action string, pg domain.Playground) bool {
 	switch action {
-	case "rollout", "retry_compose":
+	case "rollout", "retry_compose", "start", "hard_restart":
 		return true
-	case "start":
-		return !playgroundHasRuntimeCompose(pg)
-	case "hard_restart":
-		return pg.PlayspecID != nil
 	default:
 		return false
 	}
@@ -164,11 +160,15 @@ func (h Handler) startCurrentExistingCompose(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return current, false
 	}
-	if err := h.runtime.StartCompose(r.Context(), *mq, *current.ComposeProject); err != nil {
-		response.Error(w, r, http.StatusUnprocessableEntity, "PLAYGROUND_ACTION_FAILED", err.Error(), nil)
-		return current, false
+	started, err := h.services.StartRuntimePlayground(r.Context(), current, mq)
+	if err != nil {
+		if writePlaygroundOperationSuperseded(w, r, err) {
+			return started, false
+		}
+		response.Error(w, r, http.StatusUnprocessableEntity, "PLAYGROUND_ACTION_FAILED", err.Error(), started.ErrorDetails)
+		return started, false
 	}
-	return h.savePlaygroundOperationStatus(w, r, current, domain.StatusRunning)
+	return started, true
 }
 
 // deployPlaygroundOperation claims a row then deploys it.
@@ -290,6 +290,19 @@ func (h Handler) savePlaygroundOperationStatus(w http.ResponseWriter, r *http.Re
 		return pg, false
 	}
 	return saved, true
+}
+
+// writePlaygroundOperationSuperseded maps worker lifecycle races to INVALID_STATE.
+func writePlaygroundOperationSuperseded(w http.ResponseWriter, r *http.Request, err error) bool {
+	var superseded interface{ SupersededStatus() string }
+	if !errors.As(err, &superseded) {
+		return false
+	}
+	response.Error(w, r, http.StatusConflict, "INVALID_STATE", "playground operation was superseded", map[string]any{
+		"current_status": superseded.SupersededStatus(),
+		"force_allowed":  false,
+	})
+	return true
 }
 
 // enqueuePlaygroundOperationResult returns an async-shaped result for fast sync actions.

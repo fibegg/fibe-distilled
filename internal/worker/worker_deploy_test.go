@@ -662,6 +662,51 @@ func TestObserveRuntimeDoesNotAcceptEmptyRoutedServiceEvidence(t *testing.T) {
 	assertObserveRuntimeTimeout(t, "empty-routed--1", `[]`, "empty routed service evidence")
 }
 
+func TestStartRuntimePlaygroundWaitsForRoutedServicesToBecomeHealthy(t *testing.T) {
+	ctx, st := openWorkerTestStore(t)
+	project := "start-observe--1"
+	exec := &startRuntimeObserveExecutor{}
+	w := Worker{
+		DB:                     st,
+		Runtime:                runtime.Checker{Executor: exec},
+		RuntimeObserveTimeout:  100 * time.Millisecond,
+		RuntimeObserveInterval: time.Millisecond,
+	}
+	mq, err := createTestRuntimeMarquee(t, ctx, st, domain.Marquee{Name: "local", Host: "127.0.0.1", User: "root", Port: 22, SSHPrivateKey: "test", Status: "active"})
+	if err != nil {
+		t.Fatalf("create marquee: %v", err)
+	}
+	pg, err := st.CreatePlayground(ctx, domain.Playground{
+		Name:           "start-observe-pg",
+		Status:         domain.StatusStopped,
+		MarqueeID:      &mq.ID,
+		ComposeProject: &project,
+		Services:       []domain.PlaygroundServiceInfo{{Name: "web", Status: "stopped"}},
+		ServiceURLs:    []domain.PlaygroundServiceURL{{Name: "web", URL: "https://start.example.test"}},
+	})
+	if err != nil {
+		t.Fatalf("create playground: %v", err)
+	}
+
+	updated, err := w.StartRuntimePlayground(ctx, pg, &mq)
+	if err != nil {
+		t.Fatalf("start runtime playground: %v", err)
+	}
+	if updated.Status != domain.StatusRunning {
+		t.Fatalf("expected running playground, got %#v", updated)
+	}
+	if exec.inspectCount < 2 {
+		t.Fatalf("expected start to poll until routed service was healthy, inspect count=%d", exec.inspectCount)
+	}
+	persisted, err := st.GetPlayground(ctx, "start-observe-pg")
+	if err != nil {
+		t.Fatalf("get playground: %v", err)
+	}
+	if persisted.Status != domain.StatusRunning || len(persisted.ServiceURLs) != 1 || persisted.ServiceURLs[0].Running == nil || !*persisted.ServiceURLs[0].Running || persisted.ServiceURLs[0].Health != "healthy" {
+		t.Fatalf("expected persisted healthy routed service, got %#v", persisted)
+	}
+}
+
 func TestDeployPlaygroundRecordsFailedCreationStep(t *testing.T) {
 	ctx, st := openWorkerTestStore(t)
 	project := "source-fail--1"

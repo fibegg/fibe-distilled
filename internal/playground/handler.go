@@ -52,6 +52,8 @@ type Services interface {
 	AsyncSupervisor
 	// DeployPlayground renders and deploys a Playground.
 	DeployPlayground(context.Context, domain.Playground, domain.Playspec, *domain.Marquee) (domain.Playground, error)
+	// StartRuntimePlayground starts and observes an existing runtime Compose project.
+	StartRuntimePlayground(context.Context, domain.Playground, *domain.Marquee) (domain.Playground, error)
 	// RefreshPlayground observes and reconciles runtime status.
 	RefreshPlayground(context.Context, domain.Playground) (domain.PlaygroundStatus, error)
 }

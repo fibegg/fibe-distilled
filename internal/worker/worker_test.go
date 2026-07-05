@@ -416,6 +416,25 @@ func assertObserveRuntimeTimeout(t *testing.T, project string, stdout string, la
 	}
 }
 
+type startRuntimeObserveExecutor struct {
+	runtimetest.FakeExecutor
+	inspectCount int
+}
+
+func (e *startRuntimeObserveExecutor) Run(ctx context.Context, marquee domain.Marquee, command string) (runtime.CommandResult, error) {
+	e.Seen = append(e.Seen, command)
+	return e.FakeExecutor.Run(ctx, marquee, command)
+}
+
+func (e *startRuntimeObserveExecutor) Services(_ context.Context, _ domain.Marquee, _ string, _ string, _ string) ([]domain.PlaygroundServiceInfo, error) {
+	e.inspectCount++
+	health := "healthy"
+	if e.inspectCount == 1 {
+		health = "starting"
+	}
+	return []domain.PlaygroundServiceInfo{{Name: "web", Image: "alpine", Status: "running", Health: health, Running: true}}, nil
+}
+
 type stopDuringRefreshRepairExecutor struct {
 	runtimetest.FakeExecutor
 	store        *store.DB

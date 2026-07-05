@@ -79,6 +79,11 @@ func (e deploymentSupersededError) Error() string {
 	return fmt.Sprintf("playground %d deployment was superseded by status %q", e.PlaygroundID, e.Status)
 }
 
+// SupersededStatus exposes the winning lifecycle status to HTTP adapters.
+func (e deploymentSupersededError) SupersededStatus() string {
+	return e.Status
+}
+
 // creationStepLabel maps internal phase names to SDK-visible labels.
 func creationStepLabel(name string) string {
 	if label, ok := creationStepLabels[name]; ok {
@@ -93,6 +98,7 @@ var creationStepLabels = map[string]string{
 	"host_prerequisites": "Check host",
 	"source_sync":        "Sync sources",
 	"builds":             "Build images",
+	"compose_start":      "Start compose",
 	"compose_deploy":     "Deploy compose",
 	"runtime_observe":    "Observe runtime",
 	"finalize":           "Finalize",

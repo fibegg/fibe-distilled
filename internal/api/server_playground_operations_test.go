@@ -239,7 +239,12 @@ func TestPlaygroundHardRestartWithoutPlayspecRestartsExistingRuntimeCompose(t *t
 		_ = json.NewDecoder(res.Body).Decode(&got)
 		t.Fatalf("expected hard restart to be accepted, got %d: %#v", res.StatusCode, got)
 	}
+	var queued map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&queued); err != nil {
+		t.Fatalf("decode async response: %v", err)
+	}
 	closeResponseBody(t, res)
+	waitAsyncSuccess(t, srv, queued["status_url"].(string))
 
 	seen := strings.Join(fake.Seen, "\n")
 	if !strings.Contains(seen, "FIBE_DISTILLED_DOWN project='runtime-only--1'") ||
@@ -284,7 +289,12 @@ func TestPlaygroundOperationUsesConfiguredMarqueeForLegacyRuntimeRow(t *testing.
 		_ = json.NewDecoder(res.Body).Decode(&got)
 		t.Fatalf("expected start to be accepted, got %d: %#v", res.StatusCode, got)
 	}
+	var queued map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&queued); err != nil {
+		t.Fatalf("decode async response: %v", err)
+	}
 	closeResponseBody(t, res)
+	waitAsyncSuccess(t, srv, queued["status_url"].(string))
 	seen := strings.Join(fake.Seen, "\n")
 	if !strings.Contains(seen, "marquee_id="+idString(configured.ID)) {
 		t.Fatalf("operation should use configured marquee owner guard:\n%s", seen)
@@ -339,7 +349,12 @@ func TestPlaygroundStartPreservesConcurrentExpirationUpdate(t *testing.T) {
 		_ = json.NewDecoder(res.Body).Decode(&got)
 		t.Fatalf("expected start to be accepted, got %d: %#v", res.StatusCode, got)
 	}
+	var queued map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&queued); err != nil {
+		t.Fatalf("decode async response: %v", err)
+	}
 	closeResponseBody(t, res)
+	waitAsyncSuccess(t, srv, queued["status_url"].(string))
 	persisted, err := st.GetPlayground(ctx, "start-expiry-pg")
 	if err != nil {
 		t.Fatalf("get playground: %v", err)
@@ -389,19 +404,19 @@ func TestPlaygroundStartDoesNotOverwriteSupersedingLifecycleStatus(t *testing.T)
 	exec.playgroundID = pg.ID
 
 	res := doReq(t, srv, http.MethodPost, "/api/playgrounds/start-superseded-pg/operations", map[string]any{"action_type": "start"}, "test-token")
-	if res.StatusCode != http.StatusConflict {
+	if res.StatusCode != http.StatusAccepted {
 		var got map[string]any
 		_ = json.NewDecoder(res.Body).Decode(&got)
-		t.Fatalf("expected superseded start conflict, got %d: %#v", res.StatusCode, got)
+		t.Fatalf("expected superseded start to be accepted asynchronously, got %d: %#v", res.StatusCode, got)
 	}
-	var got map[string]any
-	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
-		t.Fatalf("decode conflict: %v", err)
+	var queued map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&queued); err != nil {
+		t.Fatalf("decode async response: %v", err)
 	}
 	closeResponseBody(t, res)
-	errObj := got["error"].(map[string]any)
-	if errObj["code"] != "INVALID_STATE" {
-		t.Fatalf("expected invalid state conflict, got %#v", got)
+	failed := waitAsyncError(t, srv, queued["status_url"].(string))
+	if failed["error_code"] != "INVALID_STATE" {
+		t.Fatalf("expected invalid state async error, got %#v", failed)
 	}
 	persisted, err := st.GetPlayground(ctx, "start-superseded-pg")
 	if err != nil {
