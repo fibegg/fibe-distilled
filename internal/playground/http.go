@@ -37,7 +37,7 @@ func (h Handler) playgroundsList(w http.ResponseWriter, r *http.Request) {
 	response.List(w, r, filtered)
 }
 
-// playgroundsCreate creates and deploys a Playground synchronously.
+// playgroundsCreate creates a Playground and starts deployment in the background.
 func (h Handler) playgroundsCreate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Playground playgroundPayload `json:"playground"`
@@ -45,7 +45,7 @@ func (h Handler) playgroundsCreate(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	pg, err := h.createAndDeployPlayground(r.Context(), body.Playground)
+	pg, err := h.createAndDeployPlaygroundAsync(r.Context(), body.Playground)
 	if err != nil {
 		writeCreatePlaygroundErr(w, r, err)
 		return
@@ -129,6 +129,9 @@ func (h Handler) savePlaygroundUpdate(w http.ResponseWriter, r *http.Request, lo
 	}
 	before := current
 	payload.apply(&current)
+	if payload.Name != "" {
+		current.UpdatedAt = time.Now().UTC()
+	}
 	if err := h.validatePlaygroundUpdate(r.Context(), current); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			response.NotFound(w, r, "playspec")
@@ -138,10 +141,22 @@ func (h Handler) savePlaygroundUpdate(w http.ResponseWriter, r *http.Request, lo
 		return current, false
 	}
 	markRuntimeConfigChanged(&current, before, payload)
+	return h.savePlaygroundUpdateRow(w, r, current, payload)
+}
+
+// savePlaygroundUpdateRow persists PATCH changes and reapplies explicit renames if needed.
+func (h Handler) savePlaygroundUpdateRow(w http.ResponseWriter, r *http.Request, current domain.Playground, payload playgroundPayload) (domain.Playground, bool) {
 	updated, err := h.repo.SavePlayground(r.Context(), current)
 	if err != nil {
 		response.ServerError(w, r, err)
 		return current, false
+	}
+	if payload.Name != "" && updated.Name != normalizeScalarInput(payload.Name) {
+		updated, err = h.repo.RenamePlayground(r.Context(), updated.ID, payload.Name)
+		if err != nil {
+			response.ServerError(w, r, err)
+			return current, false
+		}
 	}
 	return updated, true
 }

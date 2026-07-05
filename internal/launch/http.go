@@ -345,10 +345,7 @@ func (h Handler) deployLaunchPlayground(ctx context.Context, plan launchPlan, pl
 		EnvOverrides: plan.EnvOverrides,
 		Services:     plan.Services,
 	}
-	if plan.RepositoryURL != "" {
-		return h.deployRuntimePlayground(ctx, payload, true)
-	}
-	return h.deployRuntimePlayground(ctx, payload, false)
+	return h.deployRuntimePlayground(ctx, payload, true)
 }
 
 // writeLaunchCreated writes the SDK-compatible launch success payload.

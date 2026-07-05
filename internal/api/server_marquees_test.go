@@ -264,10 +264,11 @@ func TestFailedMarqueeDeployPreservesErrorPlayground(t *testing.T) {
 		"marquee_id":  marquee.ID,
 	}}
 	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", pgBody, "test-token")
-	if res.StatusCode < 400 {
-		t.Fatalf("expected failed create, got %d", res.StatusCode)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("expected create response before async failure, got %d", res.StatusCode)
 	}
 	closeResponseBody(t, res)
+	waitForPlaygroundStatus(t, st, "failed-pg", domain.StatusError)
 
 	var pg map[string]any
 	res = doReq(t, srv, http.MethodGet, "/api/playgrounds/failed-pg", nil, "test-token")

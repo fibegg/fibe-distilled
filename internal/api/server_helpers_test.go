@@ -128,6 +128,42 @@ func waitForAsyncLaunchError(t *testing.T, st *store.DB, playgroundID string) {
 	}
 }
 
+func waitForRenderedCompose(t *testing.T, st *store.DB, playgroundID string) domain.Playground {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		pg, err := st.GetPlayground(context.Background(), playgroundID)
+		if err != nil {
+			t.Fatalf("get rendered compose playground: %v", err)
+		}
+		if strings.TrimSpace(pg.GeneratedComposeYAML) != "" {
+			return pg
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected playground %s to render compose, got status=%s", playgroundID, pg.Status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func waitForPlaygroundStatus(t *testing.T, st *store.DB, playgroundID string, want string) domain.Playground {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		pg, err := st.GetPlayground(context.Background(), playgroundID)
+		if err != nil {
+			t.Fatalf("get playground status: %v", err)
+		}
+		if pg.Status == want {
+			return pg
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected playground %s status %s, got %s", playgroundID, want, pg.Status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func newReservedOverrideHandlerApp(t *testing.T) (*Server, int64, string) {
 	t.Helper()
 	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "fibe-distilled.sqlite3"))

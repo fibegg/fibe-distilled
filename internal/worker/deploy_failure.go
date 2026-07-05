@@ -20,20 +20,41 @@ func (w Worker) saveDeploymentProgressWhen(ctx context.Context, pg domain.Playgr
 	if w.DB == nil || pg.ID == 0 {
 		return pg, nil
 	}
+	for {
+		saved, retry, err := w.trySaveDeploymentProgress(ctx, pg, allowed)
+		if err != nil {
+			return saved, err
+		}
+		if !retry {
+			return saved, nil
+		}
+	}
+}
+
+// trySaveDeploymentProgress attempts one guarded deployment-progress write.
+func (w Worker) trySaveDeploymentProgress(ctx context.Context, pg domain.Playground, allowed func(string) bool) (domain.Playground, bool, error) {
 	current, err := w.DB.GetPlayground(ctx, idString(pg.ID))
 	if err != nil {
-		return pg, err
+		return pg, false, err
 	}
 	if !allowed(current.Status) {
-		return current, deploymentSupersededError{PlaygroundID: pg.ID, Status: current.Status}
+		return current, false, deploymentSupersededError{PlaygroundID: pg.ID, Status: current.Status}
 	}
-	pg = preserveLatestDeploymentMetadata(pg, current)
-	return w.DB.SavePlayground(ctx, pg)
+	candidate := preserveLatestDeploymentMetadata(pg, current)
+	saved, ok, err := w.DB.SavePlaygroundIfCurrent(ctx, candidate, current.Status, current.UpdatedAt)
+	if err != nil {
+		return pg, false, err
+	}
+	return saved, !ok, nil
 }
 
 // preserveLatestDeploymentMetadata keeps mutable user metadata during deployment.
 func preserveLatestDeploymentMetadata(pg domain.Playground, current domain.Playground) domain.Playground {
 	pg.Name = current.Name
+	pg.PlayspecID = current.PlayspecID
+	pg.MarqueeID = current.MarqueeID
+	pg.EnvOverrides = current.EnvOverrides
+	pg.ServiceBranches = current.ServiceBranches
 	pg.ExpiresAt = current.ExpiresAt
 	return pg
 }

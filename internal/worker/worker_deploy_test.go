@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -572,6 +573,55 @@ func TestDeploymentProgressPreservesCurrentExpiration(t *testing.T) {
 	assertPlaygroundExpiry(t, "persisted deployment progress", persisted, fixture.extendedExpiry)
 	if persisted.Status != domain.StatusInProgress || persisted.GeneratedComposeYAML == "" {
 		t.Fatalf("deployment progress should still save runtime progress, got %#v", persisted)
+	}
+}
+
+func TestDeploymentProgressPreservesCurrentRuntimeConfig(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "fibe-distilled.sqlite3"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	originalServiceBranches := map[string]any{"web": map[string]any{"subdomain": "old"}}
+	pg, err := st.CreatePlayground(ctx, domain.Playground{
+		Name:            "deploy-progress-runtime-config",
+		Status:          domain.StatusPending,
+		EnvOverrides:    map[string]string{"REMOVE_ME": "1"},
+		ServiceBranches: originalServiceBranches,
+	})
+	if err != nil {
+		t.Fatalf("create playground: %v", err)
+	}
+	current := pg
+	current.EnvOverrides = map[string]string{}
+	current.ServiceBranches = map[string]any{"web": map[string]any{"subdomain": "new"}}
+	if _, err := st.SavePlayground(ctx, current); err != nil {
+		t.Fatalf("save current runtime config: %v", err)
+	}
+
+	progress := pg
+	progress.Status = domain.StatusInProgress
+	progress.GeneratedComposeYAML = "services:\n  web:\n    image: alpine\n"
+	w := Worker{DB: st}
+	saved, err := w.saveDeploymentProgress(ctx, progress)
+	if err != nil {
+		t.Fatalf("save deployment progress: %v", err)
+	}
+	if len(saved.EnvOverrides) != 0 {
+		t.Fatalf("deployment progress should preserve cleared env overrides, got %#v", saved.EnvOverrides)
+	}
+	wantBranches := map[string]any{"web": map[string]any{"subdomain": "new"}}
+	if !reflect.DeepEqual(saved.ServiceBranches, wantBranches) {
+		t.Fatalf("deployment progress should preserve current service branches, got %#v", saved.ServiceBranches)
+	}
+	persisted, err := st.GetPlayground(ctx, "deploy-progress-runtime-config")
+	if err != nil {
+		t.Fatalf("get playground: %v", err)
+	}
+	if len(persisted.EnvOverrides) != 0 || !reflect.DeepEqual(persisted.ServiceBranches, wantBranches) {
+		t.Fatalf("persisted progress should preserve current runtime config, got env=%#v services=%#v", persisted.EnvOverrides, persisted.ServiceBranches)
 	}
 }
 

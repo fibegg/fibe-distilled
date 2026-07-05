@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	compose "github.com/fibegg/fibe-distilled/internal/composefile"
@@ -18,6 +19,7 @@ import (
 
 // FakeExecutor records runtime operations and returns configured results.
 type FakeExecutor struct {
+	mu sync.Mutex
 	// Results maps exact commands to command results.
 	Results map[string]runtime.CommandResult
 	// Errors maps exact commands to execution errors.
@@ -36,6 +38,8 @@ type FakeExecutor struct {
 
 // Run records a command and returns an exact, contains, list, or default result.
 func (f *FakeExecutor) Run(_ context.Context, _ domain.Marquee, command string) (runtime.CommandResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, command)
 	if result, ok, err := f.exactResult(command); ok {
 		return result, err
@@ -48,6 +52,8 @@ func (f *FakeExecutor) Run(_ context.Context, _ domain.Marquee, command string) 
 
 // WriteFile records a runtime file write.
 func (f *FakeExecutor) WriteFile(_ context.Context, _ domain.Marquee, remotePath string, content string) (runtime.CommandResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, "write:"+remotePath+":"+content)
 	f.writeRemote(remotePath, content)
 	return runtime.CommandResult{Stdout: "ok"}, nil
@@ -55,6 +61,8 @@ func (f *FakeExecutor) WriteFile(_ context.Context, _ domain.Marquee, remotePath
 
 // ReadFile records a runtime file read and returns configured content or absence.
 func (f *FakeExecutor) ReadFile(_ context.Context, _ domain.Marquee, remotePath string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, "read:"+remotePath)
 	if f.ReadErrors != nil && f.ReadErrors[remotePath] != nil {
 		return "", f.ReadErrors[remotePath]
@@ -72,12 +80,16 @@ func (f *FakeExecutor) ReadFile(_ context.Context, _ domain.Marquee, remotePath 
 
 // MkdirAll records a typed runtime directory creation.
 func (f *FakeExecutor) MkdirAll(_ context.Context, _ domain.Marquee, remotePath string, _ os.FileMode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, "mkdir -p "+runtime.ShellQuote(remotePath))
 	return nil
 }
 
 // WriteRemoteFile records a typed runtime file write.
 func (f *FakeExecutor) WriteRemoteFile(_ context.Context, _ domain.Marquee, remotePath string, content []byte, _ os.FileMode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, "write:"+remotePath+":"+string(content))
 	f.writeRemote(remotePath, string(content))
 	return nil
@@ -85,6 +97,8 @@ func (f *FakeExecutor) WriteRemoteFile(_ context.Context, _ domain.Marquee, remo
 
 // ReadRemoteFile records a typed runtime file read.
 func (f *FakeExecutor) ReadRemoteFile(_ context.Context, _ domain.Marquee, remotePath string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, "read:"+remotePath)
 	if f.ReadErrors != nil && f.ReadErrors[remotePath] != nil {
 		return nil, f.ReadErrors[remotePath]
@@ -102,6 +116,8 @@ func (f *FakeExecutor) ReadRemoteFile(_ context.Context, _ domain.Marquee, remot
 
 // RemoveAll records a typed runtime tree removal.
 func (f *FakeExecutor) RemoveAll(_ context.Context, _ domain.Marquee, remotePath string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, "remove:"+remotePath)
 	for path := range f.ReadFiles {
 		if path == remotePath || strings.HasPrefix(path, strings.TrimRight(remotePath, "/")+"/") {
@@ -113,18 +129,24 @@ func (f *FakeExecutor) RemoveAll(_ context.Context, _ domain.Marquee, remotePath
 
 // Rename records a typed runtime rename.
 func (f *FakeExecutor) Rename(_ context.Context, _ domain.Marquee, oldPath string, newPath string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, "rename:"+oldPath+":"+newPath)
 	return nil
 }
 
 // Chmod records a typed runtime chmod.
 func (f *FakeExecutor) Chmod(_ context.Context, _ domain.Marquee, remotePath string, perm os.FileMode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Seen = append(f.Seen, fmt.Sprintf("chmod %03o %s", perm.Perm(), runtime.ShellQuote(remotePath)))
 	return nil
 }
 
 // Stat returns configured fake file metadata when present.
 func (f *FakeExecutor) Stat(_ context.Context, _ domain.Marquee, remotePath string) (fs.FileInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.ReadFiles != nil {
 		if _, ok := f.ReadFiles[remotePath]; ok {
 			return fakeFileInfo{name: remotePath, mode: 0o644}, nil
@@ -135,6 +157,8 @@ func (f *FakeExecutor) Stat(_ context.Context, _ domain.Marquee, remotePath stri
 
 // ReadDir lists direct fake child directories under a runtime path.
 func (f *FakeExecutor) ReadDir(_ context.Context, _ domain.Marquee, remotePath string) ([]fs.FileInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	root := strings.TrimRight(remotePath, "/")
 	children := map[string]bool{}
 	for path := range f.ReadFiles {

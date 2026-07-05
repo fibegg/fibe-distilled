@@ -90,6 +90,46 @@ func (s *DB) SavePlayground(ctx context.Context, p domain.Playground) (domain.Pl
 	return p, nil
 }
 
+// SavePlaygroundIfCurrent updates a Playground only if status and updated_at still match.
+func (s *DB) SavePlaygroundIfCurrent(ctx context.Context, p domain.Playground, status string, updatedAt time.Time) (domain.Playground, bool, error) {
+	now := time.Now().UTC()
+	p.Name = strings.TrimSpace(p.Name)
+	encoded, err := encodePlaygroundJSON(p)
+	if err != nil {
+		return p, false, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE playgrounds SET name=?,status=?,playspec_id=?,marquee_id=?,compose_project=?,root_domain=?,routing_scheme=?,internal_password=?,env_overrides_json=?,service_branches_json=?,generated_compose_yaml=?,services_json=?,service_urls_json=?,build_statuses_json=?,creation_steps_json=?,expires_at=?,last_applied_at=?,error_message=?,state_reason=?,state_reasons_json=?,build_warnings_json=?,error_details_json=?,playguard_repair_reason=?,playguard_repair_lock_until=?,needs_recreation=?,updated_at=? WHERE id=? AND status=? AND updated_at=?`,
+		p.Name, p.Status, nullableInt64(p.PlayspecID), nullableInt64(p.MarqueeID), nullableString(p.ComposeProject), nullableString(p.RootDomain), nullableString(p.RoutingScheme), nullableString(p.InternalPassword), encoded.Env, encoded.Branches, p.GeneratedComposeYAML, encoded.Services, encoded.URLs, encoded.Builds, encoded.Steps, nullableTime(p.ExpiresAt), nullableTime(p.LastAppliedAt), nullableString(p.ErrorMessage), nullableString(p.StateReason), encoded.StateReasons, encoded.BuildWarnings, encoded.ErrorDetails, nullableString(p.PlayguardRepairReason), nullableTime(p.PlayguardRepairLockUntil), boolValue(p.NeedsRecreation), encodeTime(now), p.ID, status, encodeTime(updatedAt))
+	if err != nil {
+		return p, false, err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return p, false, err
+	}
+	if rows == 0 {
+		current, getErr := s.GetPlayground(ctx, strconv.FormatInt(p.ID, 10))
+		if getErr != nil {
+			return p, false, getErr
+		}
+		return current, false, nil
+	}
+	p.UpdatedAt = now
+	decoratePlaygroundExpiration(&p)
+	return p, true, nil
+}
+
+// RenamePlayground updates a Playground name without rewriting runtime progress fields.
+func (s *DB) RenamePlayground(ctx context.Context, id int64, name string) (domain.Playground, error) {
+	now := time.Now().UTC()
+	normalized := strings.TrimSpace(name)
+	res, err := s.db.ExecContext(ctx, `UPDATE playgrounds SET name=?, updated_at=? WHERE id=?`, normalized, encodeTime(now), id)
+	if err := requireRowsAffected(res, err); err != nil {
+		return domain.Playground{}, err
+	}
+	return s.GetPlayground(ctx, strconv.FormatInt(id, 10))
+}
+
 // DeletePlayground deletes a Playground by ID or name.
 func (s *DB) DeletePlayground(ctx context.Context, identifier string) error {
 	return s.deleteByIdentifier(ctx, identifier, `DELETE FROM playgrounds WHERE id=?`, `DELETE FROM playgrounds WHERE name=?`)

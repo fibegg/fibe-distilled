@@ -17,6 +17,8 @@ type Repository interface {
 	CreatePlayground(context.Context, domain.Playground) (domain.Playground, error)
 	// SavePlayground persists Playground state changes.
 	SavePlayground(context.Context, domain.Playground) (domain.Playground, error)
+	// RenamePlayground updates only a Playground name.
+	RenamePlayground(context.Context, int64, string) (domain.Playground, error)
 	// DeletePlayground removes a Playground row.
 	DeletePlayground(context.Context, string) error
 	// GetPlayspec loads a Playground Playspec dependency.

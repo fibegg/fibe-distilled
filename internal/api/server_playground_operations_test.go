@@ -52,6 +52,7 @@ func TestPlaygroundDeleteFailsClosedWhenRemoteDestroyFails(t *testing.T) {
 	var pg map[string]any
 	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", pgBody, "test-token")
 	decodeResp(t, res, &pg)
+	waitForPlaygroundStatus(t, st, "delete-pg", domain.StatusRunning)
 
 	res = doReq(t, srv, http.MethodDelete, "/api/playgrounds/delete-pg", nil, "test-token")
 	if res.StatusCode != http.StatusUnprocessableEntity {

@@ -44,15 +44,13 @@ func TestPlayspecPlaygroundLifecycle(t *testing.T) {
 	var pg map[string]any
 	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", pgBody, "test-token")
 	decodeResp(t, res, &pg)
-	if pg["status"] != "running" {
-		t.Fatalf("expected running playground, got %#v", pg)
-	}
 	if pg["name"] != "demo-pg" {
 		t.Fatalf("playground name should be trimmed, got %#v", pg)
 	}
 	if _, ok := pg["maintenance_enabled"]; ok {
 		t.Fatalf("playground should not expose removed maintenance response hint: %#v", pg)
 	}
+	waitForPlaygroundStatus(t, st, "demo-pg", domain.StatusRunning)
 
 	var status map[string]any
 	res = doReq(t, srv, http.MethodGet, "/api/playgrounds/demo-pg/status", nil, "test-token")

@@ -221,6 +221,37 @@ func TestPlaygroundCreateNoOpsCompatibleReplay(t *testing.T) {
 	}
 }
 
+func TestPlaygroundCreateReturnsBeforeRemoteDeployCompletes(t *testing.T) {
+	srv, st := newTestServerWithStore(t, failingRemoteDeployExecutor())
+	defer srv.Close()
+	marquee := ensureTestConfiguredMarquee(t, st)
+
+	playspecBody := map[string]any{"playspec": map[string]any{
+		"name":              "async-create-spec",
+		"base_compose_yaml": "services:\n  web:\n    image: nginx:alpine\n",
+	}}
+	var playspec map[string]any
+	res := doReq(t, srv, http.MethodPost, "/api/playspecs", playspecBody, "test-token")
+	decodeResp(t, res, &playspec)
+
+	var playground map[string]any
+	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", map[string]any{"playground": map[string]any{
+		"name":        "async-create-pg",
+		"playspec_id": numberID(playspec["id"]),
+		"marquee_id":  marquee.ID,
+	}}, "test-token")
+	if res.StatusCode != http.StatusCreated {
+		var got map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&got)
+		t.Fatalf("playground create should return before local deploy failure, got %d: %#v", res.StatusCode, got)
+	}
+	decodeResp(t, res, &playground)
+	if numberID(playground["id"]) == "" {
+		t.Fatalf("expected created playground id, got %#v", playground)
+	}
+	waitForAsyncLaunchError(t, st, numberID(playground["id"]))
+}
+
 func TestPlaygroundCreateRejectsExplicitEmptyNoOpMaps(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
@@ -334,6 +365,7 @@ func TestPlaygroundCreateAcceptsScalarEnvOverrides(t *testing.T) {
 	if !equalStringMaps(stored.EnvOverrides, want) {
 		t.Fatalf("env_overrides not normalized: %#v", stored.EnvOverrides)
 	}
+	stored = waitForRenderedCompose(t, st, "scalar-env-pg")
 	assertRenderedEnv(t, stored.GeneratedComposeYAML, "web", want)
 }
 
@@ -527,32 +559,21 @@ func TestPlaygroundCreateAcceptsNamedReferences(t *testing.T) {
 func TestStalePlaygroundSaveDoesNotOverwriteRename(t *testing.T) {
 	srv, st := newTestServerWithStore(t, nil)
 	defer srv.Close()
-	ensureTestConfiguredMarquee(t, st)
+	ctx := context.Background()
+	created, err := st.CreatePlayground(ctx, domain.Playground{Name: "stale-rename-pg", Status: domain.StatusRunning})
+	if err != nil {
+		t.Fatalf("create playground: %v", err)
+	}
+	pgID := created.ID
 
-	playspecBody := map[string]any{"playspec": map[string]any{
-		"name":              "stale-rename-spec",
-		"base_compose_yaml": "services:\n  web:\n    image: alpine\n",
-	}}
-	var playspec map[string]any
-	res := doReq(t, srv, http.MethodPost, "/api/playspecs", playspecBody, "test-token")
-	decodeResp(t, res, &playspec)
-
-	pgBody := map[string]any{"playground": map[string]any{
-		"name":        "stale-rename-pg",
-		"playspec_id": int64(playspec["id"].(float64)),
-	}}
-	var pg map[string]any
-	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", pgBody, "test-token")
-	decodeResp(t, res, &pg)
-	pgID := int64(pg["id"].(float64))
-
-	stale, err := st.GetPlayground(context.Background(), idString(pgID))
+	stale, err := st.GetPlayground(ctx, idString(pgID))
 	if err != nil {
 		t.Fatalf("load stale playground copy: %v", err)
 	}
 	time.Sleep(2 * time.Millisecond)
 
-	res = doReq(t, srv, http.MethodPatch, "/api/playgrounds/stale-rename-pg", map[string]any{
+	var pg map[string]any
+	res := doReq(t, srv, http.MethodPatch, "/api/playgrounds/stale-rename-pg", map[string]any{
 		"playground": map[string]any{"name": "stale-rename-pg-renamed"},
 	}, "test-token")
 	decodeResp(t, res, &pg)
@@ -561,7 +582,7 @@ func TestStalePlaygroundSaveDoesNotOverwriteRename(t *testing.T) {
 	}
 
 	stale.Status = domain.StatusInProgress
-	if _, err := st.SavePlayground(context.Background(), stale); err != nil {
+	if _, err := st.SavePlayground(ctx, stale); err != nil {
 		t.Fatalf("save stale playground copy: %v", err)
 	}
 
@@ -605,6 +626,7 @@ func TestPlaygroundExpirationMatchesFibeSemantics(t *testing.T) {
 	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", pgBody, "test-token")
 	decodeResp(t, res, &pg)
 	assertExpirationSummary(t, pg)
+	waitForPlaygroundStatus(t, st, "expiring-pg", domain.StatusRunning)
 
 	var ext expirationResponse
 	res = doReq(t, srv, http.MethodPost, "/api/playgrounds/expiring-pg/expiration", map[string]any{"duration_hours": 2}, "test-token")
@@ -620,6 +642,7 @@ func TestPlaygroundExpirationMatchesFibeSemantics(t *testing.T) {
 	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", defaultTTLBody, "test-token")
 	decodeResp(t, res, &pg)
 	assertDefaultTTL(t, pg, start)
+	waitForPlaygroundStatus(t, st, "default-ttl-pg", domain.StatusRunning)
 	assertInvalidCreateExpirations(t, srv, playspecID)
 	res = doReq(t, srv, http.MethodPatch, "/api/playgrounds/expiring-pg", map[string]any{"playground": map[string]any{
 		"expires_at": "not-a-timestamp",
@@ -913,10 +936,7 @@ func TestPlaygroundCreateAppliesServiceOverridesToRuntimeCompose(t *testing.T) {
 		t.Fatalf("expected persisted service overrides: %#v", pg)
 	}
 
-	stored, err := st.GetPlayground(context.Background(), "override-pg")
-	if err != nil {
-		t.Fatalf("get stored playground: %v", err)
-	}
+	stored := waitForRenderedCompose(t, st, "override-pg")
 	rendered := stored.GeneratedComposeYAML
 	for _, want := range []string{
 		"GLOBAL_VAR: global",
@@ -1028,10 +1048,7 @@ func TestPlaygroundCreateAllowsServiceAuthPasswordOverride(t *testing.T) {
 	res = doReq(t, srv, http.MethodPost, "/api/playgrounds", pgBody, "test-token")
 	decodeResp(t, res, &pg)
 
-	stored, err := st.GetPlayground(context.Background(), "service-auth-pg")
-	if err != nil {
-		t.Fatalf("get stored playground: %v", err)
-	}
+	stored := waitForRenderedCompose(t, st, "service-auth-pg")
 	rendered := stored.GeneratedComposeYAML
 	if strings.Contains(rendered, "service-password") {
 		t.Fatalf("rendered compose must not contain raw service auth password:\n%s", rendered)

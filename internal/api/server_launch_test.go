@@ -208,6 +208,7 @@ func TestLaunchAcceptsScalarEnvOverrides(t *testing.T) {
 	if !equalStringMaps(stored.EnvOverrides, want) {
 		t.Fatalf("env_overrides not normalized: %#v", stored.EnvOverrides)
 	}
+	stored = waitForRenderedCompose(t, st, numberID(launch["playground_id"]))
 	assertRenderedEnv(t, stored.GeneratedComposeYAML, "web", want)
 }
 
@@ -864,6 +865,35 @@ func TestRepositoryLaunchReturnsBeforeRemoteDeployCompletes(t *testing.T) {
 	waitForAsyncLaunchError(t, st, numberID(launch["playground_id"]))
 }
 
+func TestComposeLaunchReturnsBeforeRemoteDeployCompletes(t *testing.T) {
+	srv, st := newTestServerWithStore(t, failingRemoteDeployExecutor())
+	defer srv.Close()
+	marquee := createRepositoryLaunchMarquee(t, st)
+
+	var launch map[string]any
+	res := doReq(t, srv, http.MethodPost, "/api/launches", map[string]any{
+		"name":       "compose-async-launch",
+		"marquee_id": marquee.ID,
+		"compose_yaml": `services:
+  web:
+    image: nginx:alpine
+    labels:
+      fibe.gg/port: "80"
+      fibe.gg/subdomain: app
+`,
+	}, "test-token")
+	if res.StatusCode != http.StatusCreated {
+		var got map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&got)
+		t.Fatalf("compose launch should return IDs before local deploy failure, got %d: %#v", res.StatusCode, got)
+	}
+	decodeResp(t, res, &launch)
+	if numberID(launch["playspec_id"]) == "" || numberID(launch["playground_id"]) == "" {
+		t.Fatalf("expected launch IDs, got %#v", launch)
+	}
+	waitForAsyncLaunchError(t, st, numberID(launch["playground_id"]))
+}
+
 func TestLaunchRepositoryPropDuplicateDifferentRepoIsRejectedAndCleansUpPlayspec(t *testing.T) {
 	srv, st := newTestServerWithStore(t, nil)
 	defer srv.Close()
@@ -972,10 +1002,7 @@ func TestLaunchCreatePassesServiceAuthPasswordOverrideToPlayground(t *testing.T)
 	res = doReq(t, srv, http.MethodGet, "/api/playgrounds/"+playgroundID, nil, "test-token")
 	decodeResp(t, res, &pg)
 
-	stored, err := st.GetPlayground(context.Background(), playgroundID)
-	if err != nil {
-		t.Fatalf("get stored playground: %v", err)
-	}
+	stored := waitForRenderedCompose(t, st, playgroundID)
 	rendered := stored.GeneratedComposeYAML
 	if strings.Contains(rendered, "service-password") {
 		t.Fatalf("rendered compose must not contain raw service auth password:\n%s", rendered)
