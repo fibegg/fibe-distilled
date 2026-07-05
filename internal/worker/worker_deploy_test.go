@@ -720,7 +720,10 @@ func TestStartRuntimePlaygroundProbesRouteWhenServiceHasNoHealthcheck(t *testing
 			"FIBE_DISTILLED_INSPECT": {Stdout: `[{"Service":"web","Image":"alpine","State":"running","Health":"","ExitCode":0}]`},
 		},
 	}
-	probe := &sequenceRouteProbeClient{statuses: []int{http.StatusBadGateway, http.StatusOK}}
+	probe := &sequenceRouteProbeClient{
+		statuses: []int{http.StatusNotFound, http.StatusBadGateway, http.StatusOK},
+		bodies:   []string{"404 page not found\n", "", ""},
+	}
 	w := Worker{
 		DB:                     st,
 		Runtime:                runtime.Checker{Executor: fake},
@@ -751,13 +754,14 @@ func TestStartRuntimePlaygroundProbesRouteWhenServiceHasNoHealthcheck(t *testing
 	if updated.Status != domain.StatusRunning {
 		t.Fatalf("expected running playground, got %#v", updated)
 	}
-	if probe.calls < 2 {
-		t.Fatalf("expected route probe to retry through 502, calls=%d", probe.calls)
+	if probe.calls < 3 {
+		t.Fatalf("expected route probe to retry through Traefik 404 and 502, calls=%d", probe.calls)
 	}
 }
 
 type sequenceRouteProbeClient struct {
 	statuses []int
+	bodies   []string
 	calls    int
 }
 
@@ -766,10 +770,14 @@ func (c *sequenceRouteProbeClient) Do(*http.Request) (*http.Response, error) {
 	if c.calls < len(c.statuses) {
 		status = c.statuses[c.calls]
 	}
+	body := ""
+	if c.calls < len(c.bodies) {
+		body = c.bodies[c.calls]
+	}
 	c.calls++
 	return &http.Response{
 		StatusCode: status,
-		Body:       io.NopCloser(strings.NewReader("")),
+		Body:       io.NopCloser(strings.NewReader(body)),
 	}, nil
 }
 

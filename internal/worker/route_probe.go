@@ -10,9 +10,11 @@ import (
 
 const defaultRouteProbeTimeout = 5 * time.Second
 
-// routeProbeReady reports whether a routed service URL reaches any non-5xx
-// response. Auth failures and app-level 404s still prove Traefik reached the
-// service instead of its backend being unavailable.
+const maxRouteProbeBodyBytes = 4096
+
+// routeProbeReady reports whether a routed service URL reaches the app instead
+// of Traefik's not-found or backend-unavailable responses. Auth failures and
+// app-level 404s still prove Traefik reached the service.
 func (w Worker) routeProbeReady(ctx context.Context, rawURL string) bool {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
@@ -28,8 +30,22 @@ func (w Worker) routeProbeReady(ctx context.Context, rawURL string) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode > 0 && resp.StatusCode < http.StatusInternalServerError
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxRouteProbeBodyBytes))
+	return routeProbeResponseReady(resp.StatusCode, body)
+}
+
+func routeProbeResponseReady(statusCode int, body []byte) bool {
+	if statusCode <= 0 || statusCode >= http.StatusInternalServerError {
+		return false
+	}
+	if statusCode == http.StatusNotFound && routeProbeDefaultNotFound(body) {
+		return false
+	}
+	return true
+}
+
+func routeProbeDefaultNotFound(body []byte) bool {
+	return strings.TrimSpace(string(body)) == "404 page not found"
 }
 
 // routeProbeClient returns the configured probe client or a short-timeout default.
