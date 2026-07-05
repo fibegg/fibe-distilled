@@ -690,7 +690,10 @@ func TestStartRuntimePlaygroundWaitsForRoutedServicesToBecomeHealthy(t *testing.
 		t.Fatalf("create playground: %v", err)
 	}
 
-	updated, err := w.StartRuntimePlayground(ctx, pg, &mq)
+	stale := pg
+	stale.Services = nil
+	stale.ServiceURLs = nil
+	updated, err := w.StartRuntimePlayground(ctx, stale, &mq)
 	if err != nil {
 		t.Fatalf("start runtime playground: %v", err)
 	}

@@ -19,9 +19,13 @@ func (w Worker) StartRuntimePlayground(ctx context.Context, pg domain.Playground
 	}
 	project := strings.TrimSpace(*pg.ComposeProject)
 	startStatus := pg.Status
+	var err error
+	pg, err = w.preserveLatestRuntimeFields(ctx, pg)
+	if err != nil {
+		return pg, err
+	}
 	serviceNames := playgroundServiceNames(pg.Services)
 	pg.Status = domain.StatusInProgress
-	var err error
 	pg, err = w.recordCreationStepForStart(ctx, pg, startStatus, "compose_start", "running", nil)
 	if err != nil {
 		return pg, err
@@ -33,6 +37,10 @@ func (w Worker) StartRuntimePlayground(ctx context.Context, pg domain.Playground
 		return w.failDeploymentAfterCreationStep(ctx, pg, "compose_start", err, serviceNames)
 	}
 	pg, err = w.recordCreationStep(ctx, pg, "compose_start", "completed", nil)
+	if err != nil {
+		return pg, err
+	}
+	pg, err = w.preserveLatestRuntimeFields(ctx, pg)
 	if err != nil {
 		return pg, err
 	}
