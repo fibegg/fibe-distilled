@@ -34,6 +34,8 @@ type Config struct {
 	GitHubTok string
 	// GitHubWebhookSecret verifies manually configured GitHub push webhooks.
 	GitHubWebhookSecret string
+	// GitHubWebhookAutoRollout deploys successful webhook-built images immediately.
+	GitHubWebhookAutoRollout bool
 	// DockerHubUsername is the optional pull/build registry username.
 	DockerHubUsername string
 	// DockerHubToken is the optional pull/build registry token.
@@ -69,6 +71,7 @@ type rawEnvConfig struct {
 	APIToken                 string `env:"FIBE_API_KEY"`
 	GitHubTok                string `env:"GITHUB_TOKEN"`
 	GitHubWebhookSecret      string `env:"GITHUB_WEBHOOK_SECRET"`
+	GitHubWebhookAutoRollout bool   `env:"FIBE_GITHUB_WEBHOOK_AUTO_ROLLOUT"`
 	DockerHubUsername        string `env:"DOCKERHUB_USERNAME"`
 	DockerHubToken           string `env:"DOCKERHUB_TOKEN"`
 	PlayguardIntervalSeconds int    `env:"FIBE_PLAYGUARD_INTERVAL_SECONDS" envDefault:"30"`
@@ -133,15 +136,16 @@ func configFromRawEnv(raw rawEnvConfig) (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		Addr:                defaultAddr,
-		DBPath:              withDefault(raw.DBPath, defaultDBPath),
-		DataDir:             withDefault(raw.DataDir, defaultDataDir),
-		APIToken:            strings.TrimSpace(raw.APIToken),
-		GitHubTok:           strings.TrimSpace(raw.GitHubTok),
-		GitHubWebhookSecret: strings.TrimSpace(raw.GitHubWebhookSecret),
-		DockerHubUsername:   strings.TrimSpace(raw.DockerHubUsername),
-		DockerHubToken:      strings.TrimSpace(raw.DockerHubToken),
-		Marquee:             marquee,
+		Addr:                     defaultAddr,
+		DBPath:                   withDefault(raw.DBPath, defaultDBPath),
+		DataDir:                  withDefault(raw.DataDir, defaultDataDir),
+		APIToken:                 strings.TrimSpace(raw.APIToken),
+		GitHubTok:                strings.TrimSpace(raw.GitHubTok),
+		GitHubWebhookSecret:      strings.TrimSpace(raw.GitHubWebhookSecret),
+		GitHubWebhookAutoRollout: raw.GitHubWebhookAutoRollout,
+		DockerHubUsername:        strings.TrimSpace(raw.DockerHubUsername),
+		DockerHubToken:           strings.TrimSpace(raw.DockerHubToken),
+		Marquee:                  marquee,
 	}
 	cfg.PlayguardInterval, err = playguardInterval(raw.PlayguardIntervalSeconds)
 	if err != nil {

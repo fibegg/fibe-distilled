@@ -41,6 +41,8 @@ type GitHubPushResult struct {
 	BuiltServices int
 	// FailedBuilds counts services that failed to rebuild after the push.
 	FailedBuilds int
+	// RolledOutPlaygrounds counts successful automatic rollouts.
+	RolledOutPlaygrounds int
 }
 
 // githubPushServiceMatch describes one service affected by a GitHub push.
@@ -68,6 +70,7 @@ func (w Worker) HandleGitHubPush(ctx context.Context, event GitHubPushEvent) (Gi
 		result.SyncedSources += playgroundResult.SyncedSources
 		result.BuiltServices += playgroundResult.BuiltServices
 		result.FailedBuilds += playgroundResult.FailedBuilds
+		result.RolledOutPlaygrounds += playgroundResult.RolledOutPlaygrounds
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -123,10 +126,23 @@ func (w Worker) handleGitHubPushPlayground(ctx context.Context, event GitHubPush
 	if err != nil {
 		return result, err
 	}
-	if buildResult.BuiltServices == 0 && githubPushHasSourceMountedMatch(matches) {
-		return result, w.refreshGitHubPushPlayground(ctx, current.ID)
+	if err := w.afterGitHubPushBuild(ctx, current.ID, matches, buildResult, &result); err != nil {
+		return result, err
 	}
 	return result, nil
+}
+
+// afterGitHubPushBuild applies post-build rollout or refresh behavior.
+func (w Worker) afterGitHubPushBuild(ctx context.Context, playgroundID int64, matches []githubPushServiceMatch, buildResult GitHubPushResult, result *GitHubPushResult) error {
+	if rolledOut, err := w.rolloutGitHubPushBuild(ctx, playgroundID, buildResult); err != nil {
+		return err
+	} else if rolledOut {
+		result.RolledOutPlaygrounds++
+	}
+	if buildResult.BuiltServices == 0 && githubPushHasSourceMountedMatch(matches) {
+		return w.refreshGitHubPushPlayground(ctx, playgroundID)
+	}
+	return nil
 }
 
 // githubPushPlaygroundContextResult carries one push target and service metadata.
@@ -317,6 +333,56 @@ func (w Worker) saveGitHubPushBuildResult(ctx context.Context, pg domain.Playgro
 	}
 	_, err = w.DB.SavePlayground(ctx, current)
 	return err
+}
+
+// rolloutGitHubPushBuild deploys fresh successful webhook build output when enabled.
+func (w Worker) rolloutGitHubPushBuild(ctx context.Context, playgroundID int64, buildResult GitHubPushResult) (bool, error) {
+	if !githubPushCanAutoRollout(w.GitHubWebhookAutoRollout, buildResult) {
+		return false, nil
+	}
+	current, mq, ps, ok, err := w.githubPushRolloutContext(ctx, playgroundID)
+	if err != nil || !ok {
+		return false, err
+	}
+	_, err = w.DeployPlayground(ctx, current, ps, &mq)
+	return err == nil, err
+}
+
+// githubPushCanAutoRollout reports whether a webhook build result is deployable.
+func githubPushCanAutoRollout(enabled bool, result GitHubPushResult) bool {
+	return enabled && result.BuiltServices > 0 && result.FailedBuilds == 0
+}
+
+// githubPushRolloutContext loads the latest Playground, Marquee, and Playspec.
+func (w Worker) githubPushRolloutContext(ctx context.Context, playgroundID int64) (domain.Playground, domain.Marquee, domain.Playspec, bool, error) {
+	current, err := w.currentGitHubPushPlayground(ctx, playgroundID)
+	if err != nil || current.ID == 0 || !githubPushBuildReady(current) {
+		return current, domain.Marquee{}, domain.Playspec{}, false, err
+	}
+	mq, err := w.runtimeMarqueeForPlayground(ctx, current)
+	if err != nil {
+		return current, domain.Marquee{}, domain.Playspec{}, false, err
+	}
+	if current.PlayspecID == nil {
+		return current, mq, domain.Playspec{}, false, nil
+	}
+	ps, err := w.DB.GetPlayspec(ctx, idString(*current.PlayspecID))
+	if err != nil {
+		return current, mq, domain.Playspec{}, false, err
+	}
+	ps, err = effectivePlaygroundPlayspec(ps, current)
+	if err != nil {
+		return current, mq, ps, false, err
+	}
+	return current, mq, ps, true, nil
+}
+
+// githubPushBuildReady reports whether the row still has webhook-built changes.
+func githubPushBuildReady(pg domain.Playground) bool {
+	if pg.Status != domain.StatusHasChanges || pg.StateReason == nil {
+		return false
+	}
+	return *pg.StateReason == webhookBuildReadyReason
 }
 
 // mergeGitHubPushBuildStatus updates Latest while preserving the deployed Active image.

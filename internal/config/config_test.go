@@ -70,6 +70,22 @@ func TestLoadUsesDefaultsForBlankOptionalStartupEnv(t *testing.T) {
 	if cfg.Addr != defaultAddr || cfg.DBPath != defaultDBPath || cfg.DataDir != defaultDataDir {
 		t.Fatalf("defaults not applied: addr=%q db=%q data=%q", cfg.Addr, cfg.DBPath, cfg.DataDir)
 	}
+	if cfg.GitHubWebhookAutoRollout {
+		t.Fatal("GitHub webhook auto-rollout should default to false")
+	}
+}
+
+func TestLoadParsesGitHubWebhookAutoRollout(t *testing.T) {
+	setRequiredEnv(t, t.TempDir(), "apps.example.com")
+	t.Setenv("FIBE_GITHUB_WEBHOOK_AUTO_ROLLOUT", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.GitHubWebhookAutoRollout {
+		t.Fatal("expected FIBE_GITHUB_WEBHOOK_AUTO_ROLLOUT=true to enable auto-rollout")
+	}
 }
 
 func TestLoadIgnoresRemovedFibeDistilledEnvNames(t *testing.T) {

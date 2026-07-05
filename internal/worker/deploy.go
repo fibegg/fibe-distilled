@@ -35,8 +35,19 @@ func (w Worker) DeployPlayground(ctx context.Context, pg domain.Playground, ps d
 	if err != nil {
 		return pg, err
 	}
-	pg.Status = domain.StatusRunning
+	pg = successfulDeploymentPlayground(pg)
 	return w.recordCreationStepStrict(ctx, pg, "finalize", "completed", nil)
+}
+
+// successfulDeploymentPlayground clears stale lifecycle diagnostics after deploy.
+func successfulDeploymentPlayground(pg domain.Playground) domain.Playground {
+	pg.Status = domain.StatusRunning
+	pg.ErrorMessage = nil
+	pg.StateReason = nil
+	pg.StateReasons = nil
+	pg.BuildWarnings = nil
+	pg.ErrorDetails = nil
+	return pg
 }
 
 // deployRenderedPlayground runs host checks, source sync, builds, and Compose deploy.

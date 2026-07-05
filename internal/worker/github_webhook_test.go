@@ -213,6 +213,136 @@ func TestHandleGitHubPushBuildsProductionServiceWithoutRollout(t *testing.T) {
 	}
 }
 
+func TestHandleGitHubPushAutoRollsOutSuccessfulProductionBuild(t *testing.T) {
+	ctx, st := openWorkerTestStore(t)
+	mq := mustWebhookRuntimeMarquee(t, ctx, st)
+	ps := mustWebhookPlayspec(t, ctx, st, "webhook-auto-rollout-spec", `services:
+  web:
+    image: node:22
+    build:
+      context: .
+      dockerfile: Dockerfile
+    labels:
+      fibe.gg/repo_url: https://github.com/acme/demo.git
+      fibe.gg/source_mount: /app
+      fibe.gg/production: "true"
+      fibe.gg/port: "3000"
+      fibe.gg/subdomain: web
+`)
+	summaries, err := buildrecord.Services(ps)
+	if err != nil {
+		t.Fatalf("build summaries: %v", err)
+	}
+	identity := buildrecord.IdentityForService(summaries[0])
+	project := "webhook-auto-rollout--1"
+	pg := mustWebhookPlayground(t, ctx, st, webhookPlaygroundInput{
+		name:           "webhook-auto-rollout-pg",
+		status:         domain.StatusRunning,
+		playspecID:     ps.ID,
+		marqueeID:      mq.ID,
+		composeProject: project,
+	})
+	active := mustWebhookBuildRecord(t, ctx, st, pg.ID, "web", "main", "1111111111111111", "fibe-distilled/webhook-auto-rollout/web:1111111111111111")
+	pg.BuildStatuses = []domain.PlaygroundBuildStatus{buildrecord.StatusFromRecord("web", "main", active)}
+	if _, err := st.SavePlayground(ctx, pg); err != nil {
+		t.Fatalf("save active build status: %v", err)
+	}
+	fake := &runtimetest.FakeExecutor{
+		ResultContains: map[string]runtime.CommandResult{
+			"FIBE_DISTILLED_RESOLVE_COMMIT": {Stdout: "abcdef1234567890\n"},
+			"docker image inspect": {
+				Stdout: `{"Labels":{"fibe.build.git_commit_sha":"abcdef1234567890","fibe.build.identity_digest":"` + identity.BuildIdentityDigest + `"}}`,
+			},
+		},
+	}
+	w := Worker{DB: st, Runtime: runtime.Checker{Executor: fake}, GitHubWebhookAutoRollout: true}
+
+	result, err := w.HandleGitHubPush(ctx, GitHubPushEvent{
+		RepositoryFullName: "acme/demo",
+		Branch:             "main",
+		After:              "abcdef1234567890",
+	})
+	if err != nil {
+		t.Fatalf("handle push: %v", err)
+	}
+	updated, err := st.GetPlayground(ctx, "webhook-auto-rollout-pg")
+	if err != nil {
+		t.Fatalf("get playground: %v", err)
+	}
+	if result.MatchedPlaygrounds != 1 || result.SyncedSources != 1 || result.BuiltServices != 1 || result.RolledOutPlaygrounds != 1 {
+		t.Fatalf("unexpected production push result: %#v playground=%#v", result, updated)
+	}
+	if updated.Status != domain.StatusRunning || updated.StateReason != nil {
+		t.Fatalf("auto-rollout should leave the playground running without webhook-ready state, got %#v", updated)
+	}
+	if len(updated.BuildStatuses) != 1 || updated.BuildStatuses[0].Active == nil ||
+		updated.BuildStatuses[0].Active.CommitSHA != "abcdef1234567890" {
+		t.Fatalf("auto-rollout should activate the webhook-built image, got %#v", updated.BuildStatuses)
+	}
+	if !strings.Contains(updated.GeneratedComposeYAML, "abcdef1234567890") {
+		t.Fatalf("auto-rollout should deploy generated compose with the new image, got:\n%s", updated.GeneratedComposeYAML)
+	}
+	if !strings.Contains(strings.Join(fake.Seen, "\n"), "FIBE_DISTILLED_UP") {
+		t.Fatalf("auto-rollout should run compose up, saw:\n%s", strings.Join(fake.Seen, "\n"))
+	}
+}
+
+func TestHandleGitHubPushAutoRolloutSkipsFailedProductionBuild(t *testing.T) {
+	ctx, st := openWorkerTestStore(t)
+	mq := mustWebhookRuntimeMarquee(t, ctx, st)
+	ps := mustWebhookPlayspec(t, ctx, st, "webhook-auto-rollout-failed-spec", `services:
+  web:
+    image: node:22
+    build:
+      context: .
+      dockerfile: Dockerfile
+    labels:
+      fibe.gg/repo_url: https://github.com/acme/demo.git
+      fibe.gg/source_mount: /app
+      fibe.gg/production: "true"
+`)
+	project := "webhook-auto-rollout-failed--1"
+	mustWebhookPlayground(t, ctx, st, webhookPlaygroundInput{
+		name:           "webhook-auto-rollout-failed-pg",
+		status:         domain.StatusRunning,
+		playspecID:     ps.ID,
+		marqueeID:      mq.ID,
+		composeProject: project,
+	})
+	fake := &runtimetest.FakeExecutor{
+		ResultContains: map[string]runtime.CommandResult{
+			"FIBE_DISTILLED_RESOLVE_COMMIT": {Stdout: "abcdef1234567890\n"},
+			"FIBE_DISTILLED_BUILD_IMAGE":    {Stderr: "build failed"},
+		},
+		ErrorContains: map[string]error{
+			"FIBE_DISTILLED_BUILD_IMAGE": errors.New("exit status 1"),
+		},
+	}
+	w := Worker{DB: st, Runtime: runtime.Checker{Executor: fake}, GitHubWebhookAutoRollout: true}
+
+	result, err := w.HandleGitHubPush(ctx, GitHubPushEvent{
+		RepositoryFullName: "acme/demo",
+		Branch:             "main",
+		After:              "abcdef1234567890",
+	})
+	if err != nil {
+		t.Fatalf("handle push: %v", err)
+	}
+	if result.FailedBuilds != 1 || result.RolledOutPlaygrounds != 0 {
+		t.Fatalf("failed build should not auto-rollout, got %#v", result)
+	}
+	updated, err := st.GetPlayground(ctx, "webhook-auto-rollout-failed-pg")
+	if err != nil {
+		t.Fatalf("get playground: %v", err)
+	}
+	if updated.Status != domain.StatusRunning || len(updated.BuildWarnings) == 0 {
+		t.Fatalf("failed webhook build should preserve runtime and warning state, got %#v", updated)
+	}
+	if strings.Contains(strings.Join(fake.Seen, "\n"), "FIBE_DISTILLED_UP") {
+		t.Fatalf("failed build must not run compose up, saw:\n%s", strings.Join(fake.Seen, "\n"))
+	}
+}
+
 func TestSourceSyncPlansSerializeSameCheckoutPath(t *testing.T) {
 	exec := newBlockingSourceSyncExecutor()
 	w := Worker{Runtime: runtime.Checker{Executor: exec}}
@@ -262,7 +392,17 @@ type webhookPlaygroundInput struct {
 
 func mustWebhookRuntimeMarquee(t *testing.T, ctx context.Context, st *store.DB) domain.Marquee {
 	t.Helper()
-	mq, err := createTestRuntimeMarquee(t, ctx, st, domain.Marquee{Name: "default", Host: "127.0.0.1", User: "root", Port: 22, Status: "active"})
+	domains := "apps.example.com"
+	acmeEmail := "ops@example.com"
+	mq, err := createTestRuntimeMarquee(t, ctx, st, domain.Marquee{
+		Name:         "default",
+		Host:         "127.0.0.1",
+		User:         "root",
+		Port:         22,
+		DomainsInput: &domains,
+		AcmeEmail:    &acmeEmail,
+		Status:       "active",
+	})
 	if err != nil {
 		t.Fatalf("create marquee: %v", err)
 	}
