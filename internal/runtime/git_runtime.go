@@ -262,7 +262,7 @@ func cloneGitCheckout(local string, req GitSyncRequest) error {
 
 // updateGitCheckout validates and updates an existing checkout in place.
 func updateGitCheckout(ctx context.Context, local string, req GitSyncRequest) error {
-	if err, ok := updateGitCheckoutWithCLI(ctx, local, req); ok {
+	if ok, err := updateGitCheckoutWithCLI(ctx, local, req); ok {
 		return err
 	}
 	return updateGitCheckoutWithGoGit(local, req)
@@ -288,46 +288,79 @@ func updateGitCheckoutWithGoGit(local string, req GitSyncRequest) error {
 }
 
 // updateGitCheckoutWithCLI updates a checkout through native Git when available.
-func updateGitCheckoutWithCLI(ctx context.Context, local string, req GitSyncRequest) (error, bool) {
+func updateGitCheckoutWithCLI(ctx context.Context, local string, req GitSyncRequest) (bool, error) {
 	if !gitCLIAvailable() {
-		return nil, false
+		return false, nil
 	}
-	clean, _, err := cleanGitWorktreeWithCLI(ctx, local)
-	if err != nil {
-		return err, true
-	}
-	if !clean {
-		return GitSyncError{Category: "dirty_work", Message: "fibe_distilled_source_sync_category=dirty_work"}, true
-	}
-	if err := runGitCLI(ctx, local, req, false, "remote", "set-url", "origin", gitRemoteURL(req.RepoURL)); err != nil {
-		return classifyGoGitError(err), true
-	}
-	if err := runGitCLI(ctx, local, req, true, "fetch", "--all", "--prune"); err != nil {
-		return classifyGoGitError(err), true
+	if err := requireCleanGitCLIWorktree(ctx, local); err != nil {
+		return true, err
 	}
 	upstream := "origin/" + req.Branch
-	if err := runGitCLI(ctx, local, req, false, "rev-parse", "--verify", upstream); err != nil {
-		return GitSyncError{Category: "missing_upstream", Message: "fibe_distilled_source_sync_category=missing_upstream", Err: err}, true
+	if err := refreshGitCLIOrigin(ctx, local, req, upstream); err != nil {
+		return true, err
 	}
+	if err := checkoutGitCLIBranch(ctx, local, req, upstream); err != nil {
+		return true, err
+	}
+	if err := ensureGitCLIFFOnlyBranch(ctx, local, req, upstream); err != nil {
+		return true, err
+	}
+	if err := runGitCLI(ctx, local, req, true, "pull", "--ff-only", "origin", req.Branch); err != nil {
+		return true, classifyGoGitError(err)
+	}
+	return true, nil
+}
+
+// requireCleanGitCLIWorktree fails when native Git sees local checkout drift.
+func requireCleanGitCLIWorktree(ctx context.Context, local string) error {
+	clean, _, err := cleanGitWorktreeWithCLI(ctx, local)
+	if err != nil {
+		return err
+	}
+	if !clean {
+		return GitSyncError{Category: "dirty_work", Message: "fibe_distilled_source_sync_category=dirty_work"}
+	}
+	return nil
+}
+
+// refreshGitCLIOrigin points origin at the requested repository and fetches refs.
+func refreshGitCLIOrigin(ctx context.Context, local string, req GitSyncRequest, upstream string) error {
+	if err := runGitCLI(ctx, local, req, false, "remote", "set-url", "origin", gitRemoteURL(req.RepoURL)); err != nil {
+		return classifyGoGitError(err)
+	}
+	if err := runGitCLI(ctx, local, req, true, "fetch", "--all", "--prune"); err != nil {
+		return classifyGoGitError(err)
+	}
+	if err := runGitCLI(ctx, local, req, false, "rev-parse", "--verify", upstream); err != nil {
+		return GitSyncError{Category: "missing_upstream", Message: "fibe_distilled_source_sync_category=missing_upstream", Err: err}
+	}
+	return nil
+}
+
+// checkoutGitCLIBranch switches to the requested branch, creating it if needed.
+func checkoutGitCLIBranch(ctx context.Context, local string, req GitSyncRequest, upstream string) error {
 	if err := runGitCLI(ctx, local, req, false, "checkout", req.Branch); err != nil {
 		if createErr := runGitCLI(ctx, local, req, false, "checkout", "-b", req.Branch, upstream); createErr != nil {
-			return GitSyncError{Category: "checkout_failed", Message: "fibe_distilled_source_sync_category=checkout_failed", Err: errors.Join(err, createErr)}, true
+			return GitSyncError{Category: "checkout_failed", Message: "fibe_distilled_source_sync_category=checkout_failed", Err: errors.Join(err, createErr)}
 		}
 	}
+	return nil
+}
+
+// ensureGitCLIFFOnlyBranch rejects local branches that cannot fast-forward.
+func ensureGitCLIFFOnlyBranch(ctx context.Context, local string, req GitSyncRequest, upstream string) error {
 	relation, err := gitCLIBranchRelation(ctx, local, req, upstream)
 	if err != nil {
-		return err, true
+		return err
 	}
 	switch relation {
 	case "ahead":
-		return GitSyncError{Category: "ahead", Message: "fibe_distilled_source_sync_category=ahead"}, true
+		return GitSyncError{Category: "ahead", Message: "fibe_distilled_source_sync_category=ahead"}
 	case "diverged":
-		return GitSyncError{Category: "diverged", Message: "fibe_distilled_source_sync_category=diverged"}, true
+		return GitSyncError{Category: "diverged", Message: "fibe_distilled_source_sync_category=diverged"}
+	default:
+		return nil
 	}
-	if err := runGitCLI(ctx, local, req, true, "pull", "--ff-only", "origin", req.Branch); err != nil {
-		return classifyGoGitError(err), true
-	}
-	return nil, true
 }
 
 // cleanGitWorktreeWithCLI reports native Git cleanliness when git is available.
@@ -389,7 +422,7 @@ func runGitCLIOutput(ctx context.Context, local string, req GitSyncRequest, with
 	}
 	gitArgs = append(gitArgs, "-C", local)
 	gitArgs = append(gitArgs, args...)
-	cmd := exec.CommandContext(ctx, "git", gitArgs...)
+	cmd := exec.CommandContext(ctx, "git", gitArgs...) // #nosec G204 -- git executable is fixed; args are built from validated sync state.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

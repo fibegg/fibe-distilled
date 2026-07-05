@@ -46,10 +46,12 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -eu
+          archive="dist/fibe-distilled_${TAG}_linux_amd64.tar.gz"
+          checksums="dist/checksums.txt"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
+            gh release upload "$TAG" "$archive" "$checksums" --clobber
           else
-            gh release create "$TAG" dist/* --generate-notes
+            gh release create "$TAG" "$archive" "$checksums" --generate-notes
           fi
 
   image:

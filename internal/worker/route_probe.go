@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
+// defaultRouteProbeTimeout caps one public route readiness request.
 const defaultRouteProbeTimeout = 5 * time.Second
 
+// maxRouteProbeBodyBytes bounds body reads used to identify proxy default pages.
 const maxRouteProbeBodyBytes = 4096
 
 // routeProbeReady reports whether a routed service URL reaches the app instead
@@ -29,11 +31,12 @@ func (w Worker) routeProbeReady(ctx context.Context, rawURL string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxRouteProbeBodyBytes))
 	return routeProbeResponseReady(resp.StatusCode, body)
 }
 
+// routeProbeResponseReady reports whether an HTTP response proves app reachability.
 func routeProbeResponseReady(statusCode int, body []byte) bool {
 	if statusCode <= 0 || statusCode >= http.StatusInternalServerError {
 		return false
@@ -44,6 +47,7 @@ func routeProbeResponseReady(statusCode int, body []byte) bool {
 	return true
 }
 
+// routeProbeDefaultNotFound reports Traefik's built-in not-found response.
 func routeProbeDefaultNotFound(body []byte) bool {
 	return strings.TrimSpace(string(body)) == "404 page not found"
 }

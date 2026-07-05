@@ -41,7 +41,7 @@ func (h Handler) playgroundsOperations(w http.ResponseWriter, r *http.Request) {
 	if !h.validatePlaygroundOperationDependencies(w, r, pg, action) {
 		return
 	}
-	if playgroundOperationShouldEnqueue(action, pg) {
+	if playgroundOperationShouldEnqueue(action) {
 		h.enqueuePlaygroundOperation(w, r, pg, action)
 		return
 	}
@@ -115,7 +115,7 @@ func playgroundOperationCanUseRuntimeOnly(action string, pg domain.Playground) b
 }
 
 // playgroundOperationShouldEnqueue reports whether an action may run a full deploy.
-func playgroundOperationShouldEnqueue(action string, pg domain.Playground) bool {
+func playgroundOperationShouldEnqueue(action string) bool {
 	switch action {
 	case "rollout", "retry_compose", "start", "hard_restart":
 		return true
