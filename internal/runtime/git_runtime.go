@@ -82,13 +82,27 @@ func (r GoGitRuntime) Sync(ctx context.Context, marquee domain.Marquee, req GitS
 	if err != nil {
 		return err
 	}
+	targetExists, err := r.remotePathExists(ctx, marquee, prepared.TargetPath.String())
+	if err != nil {
+		return err
+	}
+	gitExists, err := r.remotePathExists(ctx, marquee, prepared.TargetPath.String()+"/.git")
+	if err != nil {
+		return err
+	}
+	if targetExists && !gitExists {
+		return GitSyncError{Category: "checkout_failed", Message: "fibe_distilled_source_sync_category=checkout_failed", Err: errors.New("source path exists without .git")}
+	}
+	if gitExists {
+		return updateGitCheckout(prepared.TargetPath.String(), prepared)
+	}
 	local, err := os.MkdirTemp("", "fibe-distilled-source-*")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(local) }()
 
-	if err := r.stageGitCheckout(ctx, marquee, prepared, local); err != nil {
+	if err := cloneGitCheckout(local, prepared); err != nil {
 		return err
 	}
 	return replaceRemoteDir(ctx, r.fs(), marquee, prepared.TargetPath.String(), local)
@@ -108,26 +122,6 @@ func prepareGitSyncRequest(req GitSyncRequest) (GitSyncRequest, error) {
 		return req, errors.New("source sync path must be an absolute checkout path under this playground")
 	}
 	return req, nil
-}
-
-// stageGitCheckout prepares the local checkout that will replace the remote directory.
-func (r GoGitRuntime) stageGitCheckout(ctx context.Context, marquee domain.Marquee, req GitSyncRequest, local string) error {
-	exists, err := r.remotePathExists(ctx, marquee, req.TargetPath.String()+"/.git")
-	if err != nil {
-		return err
-	}
-	if exists {
-		return updateRemoteGitCheckout(ctx, r.fs(), marquee, req, local)
-	}
-	return cloneGitCheckout(local, req)
-}
-
-// updateRemoteGitCheckout downloads then updates an existing remote checkout.
-func updateRemoteGitCheckout(ctx context.Context, fsys RemoteFS, marquee domain.Marquee, req GitSyncRequest, local string) error {
-	if err := downloadRemoteDir(ctx, fsys, marquee, req.TargetPath.String(), local); err != nil {
-		return err
-	}
-	return updateGitCheckout(local, req)
 }
 
 // DirtyPaths reports source paths with dirty or unreadable checkout state.
@@ -260,20 +254,20 @@ func cloneGitCheckout(local string, req GitSyncRequest) error {
 	return classifyGoGitError(err)
 }
 
-// updateGitCheckout validates and updates a staged checkout.
+// updateGitCheckout validates and updates an existing checkout in place.
 func updateGitCheckout(local string, req GitSyncRequest) error {
 	repo, err := git.PlainOpen(local)
 	if err != nil {
 		return classifyGoGitError(err)
 	}
+	wt, err := cleanGitWorktree(repo)
+	if err != nil {
+		return err
+	}
 	if err := resetOrigin(repo, gitRemoteURL(req.RepoURL)); err != nil {
 		return classifyGoGitError(err)
 	}
 	if err := fetchOrigin(repo, req); err != nil {
-		return err
-	}
-	wt, err := cleanGitWorktree(repo)
-	if err != nil {
 		return err
 	}
 	return syncGitBranch(repo, wt, req)
