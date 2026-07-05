@@ -235,7 +235,7 @@ func (r GoGitRuntime) stagedCheckoutDirty(ctx context.Context, marquee domain.Ma
 	if err != nil {
 		return true, err
 	}
-	status, err := wt.Status()
+	status, err := wt.StatusWithOptions(git.StatusOptions{Strategy: git.Preload})
 	if err != nil {
 		return true, err
 	}
@@ -333,7 +333,7 @@ func cleanGitWorktree(repo *git.Repository) (*git.Worktree, error) {
 	if err != nil {
 		return nil, classifyGoGitError(err)
 	}
-	status, err := wt.Status()
+	status, err := wt.StatusWithOptions(git.StatusOptions{Strategy: git.Preload})
 	if err != nil {
 		return nil, classifyGoGitError(err)
 	}
