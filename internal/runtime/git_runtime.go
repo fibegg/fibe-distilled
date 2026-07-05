@@ -503,6 +503,9 @@ func downloadRemoteDirEntries(ctx context.Context, fsys RemoteFS, marquee domain
 		return err
 	}
 	for _, entry := range entries {
+		if entry.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
 		if err := downloadRemoteDir(ctx, fsys, marquee, path.Join(remotePath, entry.Name()), filepath.Join(localPath, entry.Name())); err != nil {
 			return err
 		}
