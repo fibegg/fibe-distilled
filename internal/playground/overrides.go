@@ -20,6 +20,7 @@ func ApplyOverrides(composeYAML string, globalEnv map[string]string, serviceOver
 	if err := service.ValidateServiceOverrideNames(rendered, nil, serviceOverrides); err != nil {
 		return "", err
 	}
+	compose.ApplyEnvInterpolation(rendered, globalEnv)
 	if err := service.ApplyGlobalEnv(rendered, globalEnv); err != nil {
 		return "", err
 	}

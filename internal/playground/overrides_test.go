@@ -51,6 +51,40 @@ func TestApplyOverridesDoesNotCreateEmptyEnvironmentForNonEnvOverrides(t *testin
 	}
 }
 
+func TestApplyOverridesInterpolatesComposeEnvExpressionsFromGlobalEnv(t *testing.T) {
+	patched, err := ApplyOverrides(`services:
+  web:
+    image: app
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:-default}
+  db:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: ${APP_PASSWORD:-default}
+      FALLBACK_PASSWORD: ${EMPTY_PASSWORD:-fallback}
+      UNRELATED_PASSWORD: ${MISSING_PASSWORD:-postgres}
+`, map[string]string{"APP_PASSWORD": "override-secret", "EMPTY_PASSWORD": ""}, nil)
+	if err != nil {
+		t.Fatalf("apply overrides: %v", err)
+	}
+	web := composetest.RenderedService(t, patched, "web")
+	webEnv := web["environment"].(map[string]any)
+	if webEnv["APP_PASSWORD"] != "override-secret" {
+		t.Fatalf("web APP_PASSWORD was not interpolated: %#v\n%s", webEnv, patched)
+	}
+	db := composetest.RenderedService(t, patched, "db")
+	dbEnv := db["environment"].(map[string]any)
+	if dbEnv["POSTGRES_PASSWORD"] != "override-secret" {
+		t.Fatalf("db POSTGRES_PASSWORD was not interpolated: %#v\n%s", dbEnv, patched)
+	}
+	if dbEnv["FALLBACK_PASSWORD"] != "fallback" {
+		t.Fatalf("empty override should use default with :- expression: %#v\n%s", dbEnv, patched)
+	}
+	if dbEnv["UNRELATED_PASSWORD"] != "${MISSING_PASSWORD:-postgres}" {
+		t.Fatalf("unrelated expression should be preserved for compose: %#v\n%s", dbEnv, patched)
+	}
+}
+
 func TestApplyOverridesRejectsUnknownServices(t *testing.T) {
 	_, err := ApplyOverrides(`services:
   web:
