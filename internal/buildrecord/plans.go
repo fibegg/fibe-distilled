@@ -27,7 +27,12 @@ func Services(ps domain.Playspec) ([]service.Summary, error) {
 
 // NeedsRemoteBuild reports whether fibe-distilled must build an image.
 func NeedsRemoteBuild(summary service.Summary) bool {
-	return summary.Build && summary.RepoURL != ""
+	return summary.Build && summary.RepoURL != "" && !sourceMountedRuntime(summary)
+}
+
+// sourceMountedRuntime reports whether a service runs from a live source mount.
+func sourceMountedRuntime(summary service.Summary) bool {
+	return summary.SourceMount != "" && !summary.Production
 }
 
 // Plan carries immutable inputs for one service image build.

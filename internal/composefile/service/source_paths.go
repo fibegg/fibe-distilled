@@ -1,6 +1,11 @@
 package service
 
-import "github.com/fibegg/fibe-distilled/internal/optfibe"
+import (
+	"strings"
+
+	"github.com/fibegg/fibe-distilled/internal/domain"
+	"github.com/fibegg/fibe-distilled/internal/optfibe"
+)
 
 // injectSourcePath rewrites build context or source mount to /opt/fibe.
 func injectSourcePath(services map[string]any, summary Summary, project string) {
@@ -35,12 +40,15 @@ func applySourcePath(raw map[string]any, summary Summary, path string) {
 	switch {
 	case summary.SourceMount != "" && !summary.Production:
 		raw["volumes"] = replaceSourceMount(raw["volumes"], summary.SourceMount, path)
+		if summary.Build {
+			raw["build"] = sourceBuild(path, summary)
+		}
 		return
 	case summary.SourceMount != "":
 		removeSourceMount(raw, summary.SourceMount)
 	}
 	if summary.Build || summary.Production {
-		raw["build"] = sourceBuild(path, summary.Dockerfile)
+		raw["build"] = sourceBuild(path, summary)
 	}
 }
 
@@ -50,12 +58,30 @@ func sourcePath(summary Summary, project string) string {
 }
 
 // sourceBuild returns the Compose build block for a synced source checkout.
-func sourceBuild(contextPath string, dockerfile string) map[string]any {
+func sourceBuild(contextPath string, summary Summary) map[string]any {
 	build := map[string]any{"context": contextPath}
-	if dockerfile != "" {
-		build["dockerfile"] = dockerfile
+	if summary.Dockerfile != "" {
+		build["dockerfile"] = summary.Dockerfile
+	}
+	if summary.BuildTarget != "" {
+		build["target"] = summary.BuildTarget
+	}
+	if args := sourceBuildArgs(summary.BuildArgs); len(args) > 0 {
+		build["args"] = args
 	}
 	return build
+}
+
+// sourceBuildArgs returns Docker Compose list-form build args.
+func sourceBuildArgs(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	args, ok := domain.ParseDockerBuildArgs(raw)
+	if !ok {
+		return nil
+	}
+	return args
 }
 
 // InjectSourcePathVariables replaces FIBE_SERVICES_*_PATH volume references.

@@ -46,9 +46,6 @@ export FIBE_BUILD_PLATFORM=linux/amd64        # optional: linux/amd64 or linux/a
 export GITHUB_TOKEN=ghp_xxx                    # optional
 # Optional receive-only GitHub push webhooks. Configure the same secret on GitHub.
 export GITHUB_WEBHOOK_SECRET=webhook-secret     # optional
-# Keep false for manual rollout after webhook builds; set true for demos that should
-# rebuild and immediately roll out on every clean GitHub push.
-export FIBE_GITHUB_WEBHOOK_AUTO_ROLLOUT=false   # optional, default false
 # Optional Docker Hub auth (avoids anonymous pull rate limits on the Marquee):
 export DOCKERHUB_USERNAME=dockerhub-user
 export DOCKERHUB_TOKEN=dockerhub-token
@@ -84,10 +81,8 @@ with payload URL `https://<fibe-distilled-host>/webhooks/github`, content type `
 the `push` event. The endpoint does not use `FIBE_API_KEY`; it verifies `X-Hub-Signature-256`. `GITHUB_TOKEN` is still
 only needed when fibe-distilled must read private repositories during source sync or image builds.
 
-By default, matching production/build services create latest BuildRecords and wait for an explicit rollout. Set
-`FIBE_GITHUB_WEBHOOK_AUTO_ROLLOUT=true` when successful webhook builds should immediately reuse the normal
-`DeployPlayground` path and roll out. Failed builds and rows that are no longer in the webhook-ready state are never
-auto-rolled out.
+Matching source-mounted non-production services pull clean branches and refresh runtime state. Matching production/build
+services create latest BuildRecords and wait for an explicit rollout, preserving the currently deployed active image.
 
 ## Quick start — deploy a Playground
 
@@ -146,7 +141,7 @@ export FIBE_API_KEY=dev-token
 - Runtime compose generation with Traefik labels, service URLs, `/opt/fibe/playgrounds/<project>` source/compose layout, exclusive managed-root cleanup, and per-playground Docker config
 - Launch endpoint that creates a Playspec and optional Playground from caller-supplied Compose, with optional `repository_url` metadata for source-backed Props and GitHub write checks
 - Dynamic BuildRecords backed by real local Docker builds for source-backed `build:` services
-- Receive-only `POST /webhooks/github` for signed GitHub `push` events; matching source-mounted Playgrounds pull clean branches, while production/build services create latest BuildRecords and optionally auto-roll out successful builds
+- Receive-only `POST /webhooks/github` for signed GitHub `push` events; matching source-mounted Playgrounds pull clean branches and refresh runtime state, while production/build services create latest BuildRecords and wait for manual rollout
 - In-process Playguard loop for expiration enforcement, source sync, and runtime drift/repair
 - Local Docker Compose deploy/stop/start/destroy through async-compatible Playground operations
 - Runtime failure classification for Docker/Compose boundary errors

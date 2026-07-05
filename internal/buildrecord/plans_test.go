@@ -69,6 +69,28 @@ func TestPlanCreatesPendingRecordAndRuntimeRequest(t *testing.T) {
 	}
 }
 
+func TestNeedsRemoteBuildSkipsLiveSourceMountEvenWithBuildBlock(t *testing.T) {
+	summary := service.Summary{
+		Name:        "web",
+		Build:       true,
+		RepoURL:     "https://github.com/acme/demo.git",
+		SourceMount: "/app",
+		Production:  false,
+	}
+	if NeedsRemoteBuild(summary) {
+		t.Fatal("live source-mounted service should not create BuildRecords even when Compose keeps build")
+	}
+	summary.Production = true
+	if !NeedsRemoteBuild(summary) {
+		t.Fatal("production source-backed service should create BuildRecords")
+	}
+	summary.Production = false
+	summary.SourceMount = ""
+	if !NeedsRemoteBuild(summary) {
+		t.Fatal("build-backed service without live source mount should create BuildRecords")
+	}
+}
+
 func TestStatusFromRecordProjectsBuildSnapshot(t *testing.T) {
 	completed := time.Date(2026, 7, 1, 12, 30, 0, 0, time.UTC)
 	message := "build failed"

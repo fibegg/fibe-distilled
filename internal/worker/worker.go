@@ -15,8 +15,6 @@ type Worker struct {
 	Runtime runtime.Checker
 	// DefaultGitHubToken is the process token used for GitHub source sync.
 	DefaultGitHubToken string
-	// GitHubWebhookAutoRollout deploys successful webhook-built images immediately.
-	GitHubWebhookAutoRollout bool
 	// RuntimeObserveTimeout bounds post-deploy runtime observation.
 	RuntimeObserveTimeout time.Duration
 	// RuntimeObserveInterval is the polling cadence during observation.

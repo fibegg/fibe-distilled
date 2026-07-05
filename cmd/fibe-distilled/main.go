@@ -105,9 +105,8 @@ func recoverInterruptedState(ctx context.Context, st *store.DB) {
 // newWorker builds the in-process worker with the production local runtime.
 func newWorker(cfg config.Config, st *store.DB, serverID string) worker.Worker {
 	return worker.Worker{
-		DB:                       st,
-		DefaultGitHubToken:       cfg.GitHubTok,
-		GitHubWebhookAutoRollout: cfg.GitHubWebhookAutoRollout,
+		DB:                 st,
+		DefaultGitHubToken: cfg.GitHubTok,
 		Runtime: runtime.Checker{
 			DockerHubUsername: cfg.DockerHubUsername,
 			DockerHubToken:    cfg.DockerHubToken,

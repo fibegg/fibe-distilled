@@ -1320,6 +1320,42 @@ func TestRuntimeSourceMountReplacesTargetOnlyShortVolume(t *testing.T) {
 	}
 }
 
+func TestRuntimeSourceMountKeepsBuildOnRemoteCheckout(t *testing.T) {
+	result, err := RuntimeWithOptions(`services:
+  test:
+    image: node:22
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    labels:
+      fibe.gg/repo_url: https://github.com/acme/my-api.git
+      fibe.gg/source_mount: /app
+      fibe.gg/dockerfile: Dockerfile.runtime
+      fibe.gg/build_target: dev
+      fibe.gg/build_args: NODE_VERSION=22,APP_ENV=development
+      fibe.gg/production: "false"
+    volumes:
+      - ./:/app
+      - cache:/cache
+`, "demo--1", "", "http", RuntimeOptions{})
+	if err != nil {
+		t.Fatalf("runtime: %v", err)
+	}
+	rendered := result.ComposeYAML
+	assertTextContainsAll(t, rendered, []string{
+		"/opt/fibe/playgrounds/demo--1/props/acme-my-api/main:/app",
+		"context: /opt/fibe/playgrounds/demo--1/props/acme-my-api/main",
+		"dockerfile: Dockerfile.runtime",
+		"target: dev",
+		"- NODE_VERSION=22",
+		"- APP_ENV=development",
+		"cache:/cache",
+	})
+	if strings.Contains(rendered, "./:/app") {
+		t.Fatalf("local source mount should be replaced, got:\n%s", rendered)
+	}
+}
+
 func TestRuntimeProductionModeRemovesSourceMount(t *testing.T) {
 	composeYAML := `services:
   test:
