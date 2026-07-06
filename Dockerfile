@@ -12,9 +12,10 @@ RUN --mount=type=cache,id=fibe-distilled-go-build,target=/root/.cache/go-build,s
 
 FROM alpine:3.24
 
-RUN apk add --no-cache ca-certificates docker-cli docker-cli-compose git && \
+RUN apk add --no-cache ca-certificates docker-cli docker-cli-compose git tini && \
     mkdir -p /app/data /opt/fibe
 WORKDIR /app
 COPY --from=builder /out/fibe-distilled /usr/local/bin/fibe-distilled
 EXPOSE 2402
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["fibe-distilled"]
