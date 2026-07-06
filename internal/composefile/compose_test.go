@@ -1356,6 +1356,54 @@ func TestRuntimeSourceMountKeepsBuildOnRemoteCheckout(t *testing.T) {
 	}
 }
 
+func TestRuntimeRewritesRelativeConfigFilesToSourceCheckout(t *testing.T) {
+	result, err := RuntimeWithOptions(`services:
+  web:
+    image: node:22
+    labels:
+      fibe.gg/repo_url: https://github.com/acme/pennylunch.git
+      fibe.gg/source_mount: /app
+  db:
+    image: postgres:18
+    configs:
+      - source: postgres_config
+        target: /etc/postgresql/postgresql.conf
+configs:
+  postgres_config:
+    file: ./config/postgresql/postgresql.conf
+`, "demo--1", "", "http", RuntimeOptions{})
+	if err != nil {
+		t.Fatalf("runtime: %v", err)
+	}
+	assertTextContainsAll(t, result.ComposeYAML, []string{
+		"file: /opt/fibe/playgrounds/demo--1/props/acme-pennylunch/main/config/postgresql/postgresql.conf",
+		"/opt/fibe/playgrounds/demo--1/props/acme-pennylunch/main:/app",
+	})
+}
+
+func TestRuntimeRejectsAmbiguousRelativeConfigFiles(t *testing.T) {
+	assertRuntimeError(t, `services:
+  web:
+    image: nginx
+configs:
+  postgres_config:
+    file: ./config/postgresql/postgresql.conf
+`, `relative file "./config/postgresql/postgresql.conf"`)
+}
+
+func TestRuntimeRejectsConfigFileTraversal(t *testing.T) {
+	assertRuntimeError(t, `services:
+  web:
+    image: node:22
+    labels:
+      fibe.gg/repo_url: https://github.com/acme/pennylunch.git
+      fibe.gg/source_mount: /app
+configs:
+  postgres_config:
+    file: ../postgresql.conf
+`, "must stay inside the synced source checkout")
+}
+
 func TestRuntimeProductionModeRemovesSourceMount(t *testing.T) {
 	composeYAML := `services:
   test:

@@ -2,6 +2,8 @@ package composefile
 
 import (
 	"errors"
+	"fmt"
+	"path"
 	"strings"
 
 	service "github.com/fibegg/fibe-distilled/internal/composefile/service"
@@ -42,6 +44,9 @@ func RuntimeWithOptions(composeYAML string, project string, rootDomain string, s
 	}
 	servicesRaw, _ := rendered["services"].(map[string]any)
 	sourcePaths := service.RuntimeSourcePaths(summaries, project)
+	if err := rewriteRelativeConfigFiles(rendered, sourcePaths); err != nil {
+		return RuntimeResult{}, err
+	}
 	metadata, err := service.RenderRuntimeServices(servicesRaw, summaries, project, rootDomain, scheme, options)
 	if err != nil {
 		return RuntimeResult{}, err
@@ -56,4 +61,78 @@ func RuntimeWithOptions(composeYAML string, project string, rootDomain string, s
 		Services:    metadata.Services,
 		ServiceURLs: metadata.ServiceURLs,
 	}, nil
+}
+
+// rewriteRelativeConfigFiles points Compose config files at the synced checkout.
+func rewriteRelativeConfigFiles(rendered map[string]any, sourcePaths map[string]string) error {
+	configs := configDefinitions(rendered)
+	if len(configs) == 0 {
+		return nil
+	}
+	sourceRoot, sourceCount := singleSourceRoot(sourcePaths)
+	for name, raw := range configs {
+		definition, configFile, ok, err := relativeConfigFile(name, raw)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if sourceCount != 1 {
+			return fmt.Errorf("config %q uses relative file %q but runtime compose has %d synced source checkouts", name, configFile, sourceCount)
+		}
+		definition["file"] = path.Join(sourceRoot, path.Clean(configFile))
+	}
+	return nil
+}
+
+// configDefinitions returns top-level Compose config definitions.
+func configDefinitions(rendered map[string]any) map[string]any {
+	configs, ok := rendered["configs"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return configs
+}
+
+// relativeConfigFile returns a relative config file path when one is present.
+func relativeConfigFile(name string, raw any) (map[string]any, string, bool, error) {
+	definition, ok := raw.(map[string]any)
+	if !ok {
+		return nil, "", false, nil
+	}
+	rawFile, ok := definition["file"]
+	if !ok {
+		return nil, "", false, nil
+	}
+	configFile, ok := rawFile.(string)
+	if !ok {
+		return nil, "", false, nil
+	}
+	configFile = strings.TrimSpace(configFile)
+	if configFile == "" || path.IsAbs(configFile) {
+		return nil, "", false, nil
+	}
+	if err := validateRelativeConfigFile(name, configFile); err != nil {
+		return nil, "", false, err
+	}
+	return definition, configFile, true, nil
+}
+
+// validateRelativeConfigFile rejects paths that would leave the source checkout.
+func validateRelativeConfigFile(name string, configFile string) error {
+	cleaned := path.Clean(configFile)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return fmt.Errorf("config %q file must stay inside the synced source checkout", name)
+	}
+	return nil
+}
+
+// singleSourceRoot returns the only source checkout and the total source count.
+func singleSourceRoot(sourcePaths map[string]string) (string, int) {
+	var root string
+	for _, sourcePath := range sourcePaths {
+		root = sourcePath
+	}
+	return root, len(sourcePaths)
 }

@@ -138,7 +138,7 @@ export FIBE_API_KEY=dev-token
 - One static bearer token for `/api/*`
 - Fibe-style list envelopes, request IDs, structured errors, and name-or-ID lookup
 - Internal Compose checks inside Playspec/Launch writes plus service extraction for map/list labels, `x-fibe.gg` launch variables, service subdomains, env overrides, source mounts, and GitHub repo labels
-- Runtime compose generation with Traefik labels, service URLs, `/opt/fibe/playgrounds/<project>` source/compose layout, exclusive managed-root cleanup, and per-playground Docker config
+- Runtime compose generation with Traefik labels, service URLs, `/opt/fibe/playgrounds/<project>` source/compose layout, exclusive managed-root cleanup, per-playground Docker config, and relative `configs.*.file` rewriting for single-source Playgrounds
 - Launch endpoint that creates a Playspec and optional Playground from caller-supplied Compose, with optional `repository_url` metadata for source-backed Props and GitHub write checks
 - Dynamic BuildRecords backed by real local Docker builds for source-backed `build:` services
 - Receive-only `POST /webhooks/github` for signed GitHub `push` events; matching source-mounted Playgrounds pull clean branches and refresh runtime state, while production/build services create latest BuildRecords and wait for manual rollout
